@@ -28,6 +28,8 @@ python -m unittest discover -s tests -v
 
 输出为单页 A4 横向 `drawing.pdf`、`preview.png`、`layout.json`、`audit.json`。失败时仅保留诊断候选，不输出新的合格图。每个任务用独立 OUTPUT 目录，避免误用此前结果。
 
+跨任务批量制作先读 [批量执行与接力边界](references/batch-handoff.md)。本包不自带整表调度器或飞书上传程序；私有原件、进度账本和授权范围须随任务交接。
+
 ## 技术与成本
 
 - Python + PyMuPDF 排版/渲染；pikepdf 解析颜色操作符，保留源 PDF 文字字体与矢量。原件为特殊色空间时自动使用矢量 SVG 路径后备，不重新生成图形和参数。
