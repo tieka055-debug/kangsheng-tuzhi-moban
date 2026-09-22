@@ -4,11 +4,17 @@ import pymupdf as fitz
 BLUE = (6/255,66/255,168/255)
 PAGE = (841.89,595.276)
 FRAME = [22,29,820,564]
+TITLE_BOX = [488,450,820,564]
+TOLERANCE_BOX = [400,493,488,564]
+PROJECTION_BOX = [775,545.5,820,564]
 def resolve(base, value):
     p=Path(value).expanduser()
     return p if p.is_absolute() else (base/p).resolve()
 
-def draw_frame_and_title(page: fitz.Page, fields: dict, assets: dict) -> None:
+def draw_frame_and_title(page: fitz.Page, fields: dict, assets: dict,
+                         tolerance_mode: str = 'legacy') -> None:
+    if tolerance_mode not in {'legacy', 'source'}:
+        raise ValueError('Unknown tolerance mode')
     cjk_font_name = "china-s"
     cjk_font_file = assets["font"]
     if cjk_font_file:
@@ -29,11 +35,9 @@ def draw_frame_and_title(page: fitz.Page, fields: dict, assets: dict) -> None:
             width = font_obj.text_length(value, fontsize=size)
             x = bounds.x0 + (bounds.width - width) / 2
             y = bounds.y0 + (bounds.height + size * .72) / 2
+            # Use the configured typeface's native weight. PDF stroke widths
+            # can scale with text size and close the counters of CJK glyphs.
             page.insert_text((x, y), value, fontname=font, fontsize=size, color=BLUE)
-            if True and value == fields.get("title"):
-                # Built-in CJK fonts have no bold face. A very small second pass
-                # gives the title the same visual weight as the approved sample.
-                page.insert_text((x + .28, y), value, fontname=font, fontsize=size, color=BLUE)
             return
         result = page.insert_textbox(fitz.Rect(box), value, fontname=font, fontsize=size, color=BLUE, align=1)
         if result < 0:
@@ -49,8 +53,6 @@ def draw_frame_and_title(page: fitz.Page, fields: dict, assets: dict) -> None:
             x = bounds.x0 + (bounds.width - width) / 2
             y = bounds.y0 + (bounds.height + size * .72) / 2
             page.insert_text((x, y), value, fontname=cjk_font_name, fontsize=size, color=BLUE)
-            if True:
-                page.insert_text((x + .24, y), value, fontname=cjk_font_name, fontsize=size, color=BLUE)
             return
         runs = []
         for char in value:
@@ -93,7 +95,7 @@ def draw_frame_and_title(page: fitz.Page, fields: dict, assets: dict) -> None:
                        clip=fitz.Rect(br.width * .012, br.height * .12, br.width * .988, br.height * .91))
     brand_pdf.close(); brand.close()
 
-    rect([488, 450, 820, 564], 1)
+    rect(TITLE_BOX, 1)
     line((488, 492), (820, 492)); line((488, 527), (820, 527))
     line((541, 492), (541, 527)); line((600, 492), (600, 527)); line((625, 492), (625, 527))
     line((688, 492), (688, 527)); line((488, 509.5), (688, 509.5))
@@ -111,9 +113,12 @@ def draw_frame_and_title(page: fitz.Page, fields: dict, assets: dict) -> None:
     text(706, 557, "SHEET: " + fields.get("sheet", "1/1"), 6.5)
     center_mixed([491, 541, 635, 563], fields["model"], 9)
 
-    rect([400, 493, 488, 564], .8)
-    text(404, 503, "UNLESS OTHERWISE", 6)
-    text(404, 511, "SPECIFIED, TOLERANCE:", 5.6)
-    y = 523
-    for value in fields.get("tolerances", []):
-        text(408, y, value, 7); y += 10
+    # A v2 source block brings its own labels, values and rules. The reserved
+    # rectangle is its container, not another table to draw over the original.
+    if tolerance_mode == 'legacy':
+        rect(TOLERANCE_BOX, .8)
+        text(404, 503, "UNLESS OTHERWISE", 6)
+        text(404, 511, "SPECIFIED, TOLERANCE:", 5.6)
+        y = 523
+        for value in fields.get("tolerances", []):
+            text(408, y, value, 7); y += 10

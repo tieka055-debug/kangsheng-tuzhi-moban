@@ -1,29 +1,51 @@
-# 批量执行与跨任务接力
+# 批量执行与跨任务接力（v2）
 
-## 当前能力边界
+## 目标
 
-本包提供单张 init/build/verify/inventory-hash，不自带整表调度器、持久队列、自动视图分组/排版求解或飞书发布代码。16项合成回归用于验证具体门禁，不证明任意图纸都已适配。首次源图内容清单和布局仍由执行者核定；自动墨迹检查之外仍需对照原图逐块复核。
+批次只负责本地生成、状态持久化和放行门禁，不上传飞书。每项使用稳定业务 ID；同一配方不会隐式重跑，失败默认最多尝试 2 次。
 
-## 新任务启动材料（存放在私有工作区）
+## 输入
 
-- 当前技能版本、可运行的 Python/依赖、命令和品牌资产。
-- 数据表链接、视图、源字段、输出字段、用户本次范围；用稳定 record ID 锁定记录，不能只用行号。
-- 各行 source 路径/hash、观察到的完整型号、全部附图/表的内容清单、manifest、输出hash与验收证据。
-- 已发布清单、跳过清单及原因、待制作清单；线上字段状态需开工时刷新。
-- 用户已认可的样板和验收规则。GitHub公开代码不能替代这些私有原件和状态。
+`JOBS.json`：
 
-## 节省重复工作的执行顺序
+```json
+{
+  "jobs": [
+    {"id": "record-001", "manifest": "manifests/001.json", "pilot": true},
+    {"id": "record-002", "manifest": "manifests/002.json"}
+  ]
+}
+```
 
-1. 一次读取目标视图必要字段，建立私有任务账本；匹配同型号未改原件。已发布且源hash未变的不重做。
-2. 每次处理小批：首次交接先3张不同布局检查执行适配，再按5张左右一批推进。这些是执行建议，不是生成速度承诺。
-3. 制作/核图可独立并行，线上发布使用单一写入者；按 publishing.md 先新上传+下载校验，再精确移除旧输出附件。
-4. 单张完成即落盘 source/manifest/输出/QA/发布回读结果；不要等待整表完成才保存。进度状态由调度者持久记录，本CLI不提供内置总账本。
-5. 使用源页缓存，失败仅重跑该图；不要反复读全部历史或从旧脚本恢复方法。同型号族可以参考分区，但每张重新确认边界/参数。
+- `id` 必须唯一且只含字母、数字、点、下划线或连字符。
+- `manifest` 相对路径以 `JOBS.json` 所在目录为基准。
+- 每批至少选 1 个代表性 `pilot`；不同结构应分别设置先导项。
 
-## 异常与完成条件
+## 推荐流程
 
-- 原图与记录型号/针数/高度不符：SKIPPED_IDENTITY。保留线上全部字段，记录记录ID、原字段型号、图内型号及证据，继续下一行；本批结束统一报告用户。不要自动给另一行改配。
-- 原件缺失、仅有不可辨认扫描件、多页尚未制定保全方案、字体或版式不支持、核验不通过：NEEDS_REVIEW。技术数据不猜补；保留旧附件，继续独立的正常项。
-- PUBLISHED只能在当前输出验收并远端下载一致后写入。生成文件或CLI退出0不等于已交付。
-- 区分“正常项已发布、异常项已列明”和“所有图纸全部制作成功”。目标执行可结束在授权范围全部有明确状态且报告交付，但未制作的跳过/待复核项始终单列，之后由用户统一处理。
-- 更换模型或开启高推理档不替代门禁。新执行者先完成实际样张验证，再逐批扩展。
+1. 先对全部原件执行 `init`，一次性保存 source map、文字框和候选组件索引。
+2. 用 `batch --mode draft` 快速检查布局；草稿可在同一目录反复覆盖，不消耗源清单复审。
+3. 源清单定稿后填写 source reviewer、完整覆盖和 `source_inventory_sha256`，再运行 build 批次。
+4. build 模式先只生成 pilot。对 pilot 的 `review-board.png` 与 `review-details.png` 做独立终审，并执行 `verify` 生成 `release.json`。
+5. 重跑同一 batch；只有全部 pilot 均为 `RELEASE_READY`，普通项才会放行。
+
+```sh
+python scripts/kangsheng.py batch JOBS.json \
+  --output-root WORK/batch --cache WORK/cache --mode build --max-attempts 2
+```
+
+## 状态与目录
+
+- 唯一真源：`WORK/batch/batch-state.json`。
+- 汇总：`WORK/batch/job-summary.json`。
+- 每次 build 使用独立目录：`JOB_ID/INVENTORY_HASH-aN/`；失败证据不会被覆盖。
+- 常见状态：`PREFLIGHT_FAIL`、`AUTO_QA_FAIL`、`AUTO_QA_PASS`、`BLOCKED_PILOT_GATE`、`RELEASE_READY`、`NEEDS_REVIEW_RETRY_LIMIT`。
+- 未变化的失败不会重复烧算力；修正 manifest 会产生新配方哈希。确需重试同一配方时显式加 `--allow-retry`。
+
+## 交接最小包
+
+交接只带：`JOBS.json`、manifest、`batch-state.json`、当前 attempt 目录、源文件及其 hash。不要把聊天记录、一次性脚本或旧 build 目录当作状态真源。
+
+## 发布边界
+
+只有同时存在且哈希互相匹配的 `drawing.pdf`、`verify.json`、`review.snapshot.json` 和 `release.json` 才可发布。远端发布仍按 [publishing.md](publishing.md) 先上传、下载回读校验，再替换旧附件。

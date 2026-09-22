@@ -1,70 +1,79 @@
-# Manifest v1
+# Manifest v2
 
-所有坐标单位为 PDF point。源坐标基于 `source.rotation` **设为该绝对角度并烘焙之后**的可见页面，不是原未旋转 MediaBox。先查看 `init` 的源页预览，再定坐标。
+新任务使用 `schema_version: 2`。v1 仅供旧清单兼容，不具有 v2 的客观整页覆盖、可读性和双向整页 QA。坐标单位为 PDF point，原点在左上；源坐标基于 `source.rotation` 烘焙后的可见页。
 
-## 必填结构
+## 基本结构
 
-| 字段 | 含义 |
-|---|---|
-| `schema_version` | 固定 `1` |
-| `source` | `{path, sha256, page:1, rotation:0或90或180或270, expected_pages:1}` |
-| `identity.expected_model` | 当前待制作产品的完整型号 |
-| `identity.observed_model` | 从同一源 PDF 核实的型号；和输出必须一致 |
-| `identity.model_evidence` | 原件标题区域/记录映射的核对说明，不能用候选稿反证原件 |
-| `identity.observed_parts` | 原表各型号；仅用于核对，绝不用于重绘表数据 |
-| `identity.part_pattern` | 预期该原件型号族的正则；例如严格约束独有型号后缀 |
-| `identity.no_part_table_reason` | 原件确实无型号表时必填原因；不能当作忽略表格的开关 |
-| `fields` | `{model,title,scale_text,unit,sheet,tolerances:[最多4行],revision可选}`。原图空白保持空白，数值不设默认值 |
-| `assets` | `{background,brand_strip,font}`，相对 manifest 或绝对本地路径 |
-| `renderer` | `auto` 默认优先 native；特殊色空间才 SVG 后备。可显式 `native` 或 `svg` |
-| `groups` | 见下文；不得漏表格/脚注/共享尺寸/投影符号 |
-| `coverage.include` | 对整张未裁源图独立确定的技术范围矩形数组；禁止由已选择的 crops 反推范围 |
-| `coverage.exclude` | `{box:[x0,y0,x1,y1],reason}` 数组，仅旧品牌/签署栏、已显式重排的标题字段等非保留技术区域 |
-| `review` | 源核对证据：`{source_sha256,inventory_sha256,reviewer,verdict:"PASS"}` |
+```json
+{
+  "schema_version": 2,
+  "source": {"path":"SOURCE.pdf","sha256":"SHA256","page":1,"rotation":270,"expected_pages":1},
+  "renderer": "auto",
+  "identity": {
+    "expected_model":"MODEL","observed_model":"MODEL","model_evidence":"完整原页证据",
+    "observed_parts":["PART-NO"],"part_pattern":"REGEX"
+  },
+  "fields": {
+    "model":"MODEL","title":"TITLE","scale_text":"1:1","unit":"mm","sheet":"1/1",
+    "tolerances":[],"no_tolerance_block_reason":"源图无公差块"
+  },
+  "assets": {"background":"BACKGROUND.png","brand_strip":"BRAND.png","font":"FONT"},
+  "groups": [{
+    "id":"front_view","kind":"view","clips":[[100,100,240,200]],
+    "reviewed_source_extent":[100,100,240,200],"dst":[40,80],"scale":1.0
+  }],
+  "coverage": {
+    "mode":"full-page-minus-exclusions",
+    "exclude":[{"box":[0,0,842,29],"kind":"outer_frame","reason":"源页外框"}]
+  },
+  "review": {
+    "source_sha256":"SHA256","source_inventory_sha256":"SOURCE_INVENTORY_SHA256",
+    "reviewer":"REVIEWER","reviewer_run_id":"SOURCE-REVIEW-RUN",
+    "reviewer_role":"source_inventory_reviewer","coverage_basis":"uncropped-full-sheet",
+    "full_page_reviewed":true,"verdict":"PASS"
+  }
+}
+```
 
-`inventory_sha256` 是除 `review` 外整个 manifest 的排序 JSON SHA256，用 `inventory-hash` 获得。审核人/审核代理在真实看过原图后填写；单纯计算哈希不是审核。任何源路径、身份、字段或几何变动都会使旧审核失效。
+- `observed_parts` 为原表全部型号；原图无表时改填 `identity.no_part_table_reason`。
+- `fields.tolerances` 在 v2 必须为空；公差值作为 `tolerance` 原矢量组保留。原图确无公差块时填 `no_tolerance_block_reason`。
+- `renderer` 可为 `auto` / `native` / `svg`。通常品牌图有效分辨率至少 150 DPI，标题字体必须覆盖所有字符。
+- 唯一兼容例外是用户已认可第 14–18 行使用的原版 `assets/brand-strip.png`：597×92 像素，SHA256 `436ab38839ec933f3c295c9b17005cb8942b16245715073c7e69da1bd5d16078`。标准位置有效分辨率为约 127.1 DPI；审核报告如实标记 `approved-native-original` 和未达到通常 DPI 阈值。这是恢复已认可原资产，不是分辨率提升；其他低分辨率文件仍被拒绝。
 
 ## 内容组
 
-```json
-{
-  "id": "side_view",
-  "kind": "view",
-  "clips": [[100,100,240,200],[100,200,200,220]],
-  "dst": [240,210],
-  "scale": 1.0
-}
+`kind` 只能为 `view`、`isometric`、`pcb`、`table`、`performance`、`note`、`projection`、`tolerance`。
+
+- `clips` 是同组原区域；`dst` 对应联合外框左上角，同组多片共用一个等比变换。
+- `reviewed_source_extent` 是审核者在完整原页上标定的最小完整技术外框。裁切携带该范围外墨迹或切断文字会停止。
+- `view` / `pcb` 必须 `scale: 1.0`。其他组缩放后的可提取技术文字不得小于 4.75 pt。
+- 组不得进入排除区，不得与其他组真实墨迹重叠。
+- 表外框与源页框共线时，`table` / `tolerance` 可用最多一条水平和一条垂直 `restored_source_rules`；只能恢复无文本闭合线。
+- v2 的 `tolerance` 最多一组（可含多片），完整目标框及恢复线笔画必须在底部专用槽 `[400,493,488,564]` 内；模板不再绘制第二份空白公差框。原值与原表直接搬运，勿用通用默认值替代。
+- 用户要求去掉空白公差格时，先查未裁切原件及放大格内墨迹，确认只有空网格而无字/数/符号。用多片 `clips` 保留完整原表头及有值部分，把纯空格框登记为有理由的 `nontechnical_annotation` 排除区并重做源清单审核。不能只靠文字提取为空认定为空，也不能套用其他型号的空列判断。
+- `projection` 的完整目标框必须在右下专用格 `[775,545.5,820,564]` 内。其他技术组仍不得占用标题或公差保留区。型号表固定右上，性能块位于其下。
+
+## 客观整页覆盖
+
+v2 的兴趣范围固定为旋转后整页减 `coverage.exclude`，不允许操作者把 `include` 缩成已选 clips。如仍写 `include`，它必须精确等于整页。
+
+`exclude.kind` 只允许 `outer_frame`、`supplier_title_block`、`watermark`、`replaced_title_field`、`nontechnical_annotation`。每个排除区必须有具体 `reason`；`audit.json` 会记录其墨迹量和可提取文字。
+
+## 两级哈希
+
+```sh
+python scripts/kangsheng.py hashes JOB.json
 ```
 
-- `kind`：`view`、`isometric`、`pcb`、`table`、`performance`、`note`、`projection` 或 `tolerance`。
-- `dst` 对应所有 `clips` 联合外框的左上角；每片相对偏移自动保留。无需分别重算 L 形各片坐标。
-- `scale` 是统一等比缩放。共享尺寸线的组不能独立拉伸/打散。尺寸视图 `view` 和 PCB 的 scale 必须为 1.0，保证源物理比例；等轴示意、表格、性能块可等比缩放。型号保留原有合法单空格，禁止首尾或连续无效空白。
-- `projection` 只能使用已核对的原投影符号，放在右下小单元格。它是唯一允许进入标题保留区的技术组。
-- 真实墨迹重叠失败；矩形外框只在空白处重叠可通过。标题保留区覆盖任何源墨迹会失败。
-- 型号表顶端在页面右上 62% 之后，性能位于页面右侧 30% 高度之后且低于表格。布局检查不会自动装箱或悄悄缩小产品视图。
+- `source_inventory_sha256`：绑定源哈希/页/旋转、身份、源字段、组类型/裁切/审核外框/恢复线、整页排除和表头；不绑定本地源路径、`dst`、`scale`、品牌资产。
+- `inventory_sha256`：绑定除顶层 `review` 外的完整输出配方。
 
-## 可选表头
+只移动布局或改缩放时不重做源清点；修改源 clips / extent / 身份 / 排除区则必须重审。
 
-原表已有正确表头时直接搬全表，不使用此项。原件将表头写在底部时，可在独立检查并保留全部数据行后，用 `table_headers` 只绘制表头和网格：
+## 最终审核
 
-```json
-{"table_headers":[{"labels":["PART NO.","DIM A","DIM B","DIM C"],
- "xs":[575,685,724,763,802],"y":[50,70]}]}
-```
+`build` 生成 `final-review-template.json`。终审者查看与模板哈希一致的 `review-board.png` 和 `review-details.png`，然后填写与源审不同的 `reviewer` / `reviewer_run_id`、`full_page_compared: true`、`verdict: "PASS"`，并把 `required_checks` 全部显式写入 `checks`。
 
-只接受固定表头标签；**没有 values/cells 数据重绘字段**。`coverage.exclude` 需说明被移走的旧表头边界，不能包含任何数据行。
+`verify --review` 校验源、输出、两级清单、两张审核图和审核运行身份。只有生成 `release.json` 才可发布。
 
-## 输出人工验收证据
-
-```json
-{
-  "source_sha256": "当前原件SHA256",
-  "output_sha256": "当前输出SHA256",
-  "inventory_sha256": "当前清单SHA256",
-  "reviewer": "真实核图人员或独立核图代理标识",
-  "verdict": "PASS",
-  "checks": ["同型号原件对照", "全部产品视图和边缘尺寸", "PCB和共享说明", "全部型号表行", "性能材质镀层", "标题系列单位公差投影", "整页可读性"]
-}
-```
-
-`verify --review` 同时检查自动门禁及上述哈希。无人工证据时只能返回自动核查通过，`release_ready` 为 false。此文件不要由生成脚本盲填 PASS。原件字迹不清、供应商型号冲突或缺参数时报告具体位置，不跨型号猜补。
+自动比较能检测输出偏离既定配方，却不能证明配方本身排版正确。终审额外放大检查标题/型号字形、Logo 原版外观、公差槽、表格最右列及最后一行的完整边框，并与用户认可的品牌版式比较。
