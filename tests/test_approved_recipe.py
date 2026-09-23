@@ -115,6 +115,27 @@ class ApprovedRecipeTest(unittest.TestCase):
             self.assertEqual((left.width, left.height, left.n), (right.width, right.height, right.n))
             self.assertTrue(left.samples == right.samples, 'Frozen baseline and replay differ at 4x RGB')
 
+    def test_native_vector_paths_require_exact_source_inventory(self):
+        with fitz.open() as source, fitz.open() as output:
+            page = source.new_page(width=100, height=100)
+            page.draw_rect(fitz.Rect(12, 14, 35, 28), color=(0, 0, 0), width=.3)
+            paths = page.get_drawings()
+            self.assertEqual(len(paths), 1)
+            target = output.new_page(width=200, height=200)
+            op = {'op': 'native_paths', 'source_box': [0, 0, 100, 100],
+                  'target_box': [50, 60, 100, 100], 'maxscale': .95,
+                  'cell_margin': 3, 'stroke_width': .3,
+                  'expected_path_count': 1,
+                  'expected_source_bbox': list(paths[0]['rect'])}
+            approved._draw_native_paths(target, paths, op)
+            self.assertEqual(len(target.get_drawings()), 1)
+            wrong = dict(op, expected_path_count=2)
+            with self.assertRaisesRegex(ValueError, 'inventory changed'):
+                approved._draw_native_paths(target, paths, wrong)
+            wrong = dict(op, expected_source_bbox=[1, 1, 2, 2])
+            with self.assertRaisesRegex(ValueError, 'bounds changed'):
+                approved._draw_native_paths(target, paths, wrong)
+
     def test_freeze_and_replay_exact_pixels_without_engineering_release(self):
         frozen = self.freeze()
         recipe = self.read(self.recipe)

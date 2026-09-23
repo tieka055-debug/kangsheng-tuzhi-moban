@@ -6,11 +6,14 @@
 
 | 场景 | 正式入口 | 通过后意味着什么 |
 |---|---|---|
+| 多份已认可原件的隔离批量重放 | `batch` + `kangsheng-products-v1` | 逐源 SHA/配方/认可基线的自动预检与精确视觉 QA；异常入队 |
 | 同一原件重做认可视觉 | `replay` / `replay-batch` | 精确复现已冻结的认可配方，不是工程发布审核 |
 | 认可成品尚未冻结 | `freeze-approved` | 计划重放与认可基线整页渲染一致，生成绑定凭证 |
 | 新型号、未知 SHA256、工程发布 | v2 `init` → `draft` → `build` → `verify` | 独立审核及全部门禁通过后生成 `release.json` |
 
 唯一生产 CLI 是 `scripts/kangsheng.py`，不再依赖历史会话中的一次性脚本。
+
+新批量入口的输入契约、混合 PyMuPDF 运行时、异常队列及视觉/工程边界见 [确定性批量重放](references/product-batch.md)。此目录中的性能与版式扩展在隔离候选分支验证；未满足全部黄金回归前不得替换正式生产版本。
 
 ## 安装
 
@@ -57,17 +60,26 @@ python scripts/kangsheng.py init INPUT.pdf \
 候选框只减少反复截图和找坐标的成本，不代表程序已理解图纸。按 [Manifest v2 规范](references/manifest.md) 完成人工分组后，先反复草拟：
 
 ```sh
-python scripts/kangsheng.py draft JOB.json --output WORK/draft --cache WORK/cache
+python scripts/kangsheng.py draft JOB.json --output WORK/draft \
+  --control-root WORK/control --cache WORK/cache
 python scripts/kangsheng.py hashes JOB.json
 ```
 
-`draft` 不要求源清单已审核，并会替换同目录中的固定草稿产物。它仍执行结构和自动 QA；不会生成发布凭证。布局稳定后，由独立源审核者核对完整未裁切原页，把 `source_inventory_sha256`、审核者和独立 `reviewer_run_id` 写入 `review`，再构建：
+`draft` 不要求源清单已审核；配方和产物未变时复用，重生成会计数。同目录重生成会替换固定草稿产物，但保留逐次生成日志。草稿仍执行结构和自动 QA，不生成发布凭证。布局稳定后，由独立源审核者核对完整未裁切原页，把 `source_inventory_sha256`、审核者和独立 `reviewer_run_id` 写入 `review`，再构建：
+
+已批准英文公差重排仅用于有逐型号原图字段映射且无额外条件的四档结构；此时仍保留原表像素差，但由源字段逐项核对和认可英文栏局部像素对照判定该授权区域。可对既有候选只读复检，不增加生成次数：
 
 ```sh
-python scripts/kangsheng.py build JOB.json --output WORK/run-001 --cache WORK/cache
+python scripts/kangsheng.py recheck-candidate JOB.json WORK/draft/draft.pdf \
+  --report WORK/draft/recheck.json --cache WORK/cache
 ```
 
-每次 `build` 使用新的输出目录。成功状态仍是 `AUTO_QA_PASS_REQUIRES_VISUAL_REVIEW`，不是交付完成。独立终审者查看两张审核图，填写生成的模板后验证：
+```sh
+python scripts/kangsheng.py build JOB.json --output WORK/run-001 \
+  --control-root WORK/control --cache WORK/cache
+```
+
+确需重新生成的 `build` 使用新的输出目录；配方与完整产物未变时直接复用旧结果。成功状态是 `AUTO_QA_PASS`，不是交付完成。独立终审者查看两张审核图，填写生成的模板后验证：
 
 ```sh
 cp WORK/run-001/final-review-template.json WORK/run-001/final-review.json
@@ -102,8 +114,8 @@ python scripts/kangsheng.py verify JOB.json WORK/run-001/drawing.pdf \
 
 ## 哈希分工
 
-- `source_inventory_sha256`：绑定源文件内容与旋转、身份/字段、组类型及裁切、审核范围、排除区和表头；不绑定源路径、`dst`、`scale` 或品牌资产。只改布局时可沿用已完成的源清单审核。
-- `inventory_sha256`：绑定除顶层 `review` 外的完整配方，用于输出、终审、批次运行目录和复验。
+- `source_inventory_sha256`：绑定源文件内容与旋转、身份/字段、组类型及裁切、审核范围、排除区和表头；英文重排时还绑定该型号源字段映射哈希。不绑定源路径、`dst`、`scale` 或品牌资产。
+- `inventory_sha256`：绑定除顶层 `review` 外的完整配方，以及实际引擎、画框、QA 规则版本和资产文件字节；配置或代码变化不得复用旧输出。
 
 `inventory-hash` 保留为只输出完整配方哈希的兼容命令；新流程优先用 `hashes` 同时取得两者。
 
@@ -111,10 +123,10 @@ python scripts/kangsheng.py verify JOB.json WORK/run-001/drawing.pdf \
 
 ```sh
 python scripts/kangsheng.py batch JOBS.json \
-  --output-root WORK/batch --cache WORK/cache --mode build --max-attempts 2
+  --output-root WORK/batch --control-root WORK/control --cache WORK/cache --mode build
 ```
 
-批次使用一个 `batch-state.json` 账本和一个 `job-summary.json` 汇总；先导项全部生成并独立 `verify` 出 `release.json` 后，重跑 `batch` 才会放行普通项。详见 [批量执行与接力](references/batch-handoff.md)。本包不含飞书上传实现；发布规则见 [references/publishing.md](references/publishing.md)。
+直接和批次共用 `WORK/control/batch-state.json`；批次另留 `job-summary.json`。至少指定一个先导项；先导项全部生成并独立 `verify` 出 `release.json` 后，重跑 `batch` 才会放行普通项。同一产品/阶段/已核验原图最多两次实际生成，旧账本不自动迁移。详见 [批量执行与接力](references/batch-handoff.md)。本包不含飞书上传实现；发布规则见 [references/publishing.md](references/publishing.md)。
 
 ## 跨窗口接力与耗时口径
 

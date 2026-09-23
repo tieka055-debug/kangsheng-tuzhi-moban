@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/kangsheng/supported-layouts/catalog-v1",
+  "title": "Kangsheng supported layout catalog v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "catalog_version",
+    "promotion_rule",
+    "layouts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "kangsheng-supported-layout-catalog-v1"
+    },
+    "catalog_version": {
+      "type": "string"
+    },
+    "promotion_rule": {
+      "type": "string"
+    },
+    "layouts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/layout"
+      }
+    }
+  },
+  "$defs": {
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "layout_id",
+        "version",
+        "status",
+        "applicability_conditions",
+        "structure_probe",
+        "page_orientation",
+        "required_technical_regions",
+        "layout_rules",
+        "region_position_rules",
+        "removable_supplier_elements",
+        "forbidden_deletion",
+        "tolerance_handling",
+        "pcb_handling",
+        "pin_table_handling",
+        "performance_handling",
+        "logo_title_handling",
+        "qa_rules",
+        "observed_golden_count",
+        "programmatically_verified_distinct_sources",
+        "inapplicable_when",
+        "confidence_requirement",
+        "fallback",
+        "qa_rules_version"
+      ],
+      "properties": {
+        "layout_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "version": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "CANDIDATE",
+            "SUPPORTED_EXACT",
+            "SUPPORTED"
+          ]
+        },
+        "applicability_conditions": {
+          "$ref": "#/$defs/strings"
+        },
+        "structure_probe": {
+          "$ref": "#/$defs/probe"
+        },
+        "page_orientation": {
+          "type": "string"
+        },
+        "required_technical_regions": {
+          "$ref": "#/$defs/strings"
+        },
+        "layout_rules": {
+          "type": "object"
+        },
+        "region_position_rules": {
+          "type": "string"
+        },
+        "removable_supplier_elements": {
+          "$ref": "#/$defs/strings"
+        },
+        "forbidden_deletion": {
+          "$ref": "#/$defs/strings"
+        },
+        "tolerance_handling": {
+          "type": "string"
+        },
+        "pcb_handling": {
+          "type": "string"
+        },
+        "pin_table_handling": {
+          "type": "string"
+        },
+        "performance_handling": {
+          "type": "string"
+        },
+        "logo_title_handling": {
+          "type": "string"
+        },
+        "qa_rules": {
+          "$ref": "#/$defs/strings"
+        },
+        "observed_golden_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "programmatically_verified_distinct_sources": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inapplicable_when": {
+          "$ref": "#/$defs/strings"
+        },
+        "confidence_requirement": {
+          "type": "string"
+        },
+        "fallback": {
+          "const": "NEEDS_AI_REVIEW"
+        },
+        "parameter_extractor": {
+          "type": "string"
+        },
+        "qa_rules_version": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "SUPPORTED"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "parameter_extractor"
+            ],
+            "properties": {
+              "programmatically_verified_distinct_sources": {
+                "minimum": 2
+              }
+            }
+          }
+        }
+      ]
+    },
+    "strings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "range": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "probe": {
+      "type": "object",
+      "required": [
+        "page_count",
+        "orientation",
+        "rotation"
+      ],
+      "properties": {
+        "page_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "orientation": {
+          "enum": [
+            "portrait",
+            "landscape",
+            "square"
+          ]
+        },
+        "rotation": {
+          "enum": [
+            0,
+            90,
+            180,
+            270
+          ]
+        },
+        "text_extractable": {
+          "type": "boolean"
+        },
+        "page_width_pt": {
+          "$ref": "#/$defs/range"
+        },
+        "page_height_pt": {
+          "$ref": "#/$defs/range"
+        },
+        "text_block_count": {
+          "$ref": "#/$defs/range"
+        },
+        "drawing_count": {
+          "$ref": "#/$defs/range"
+        },
+        "image_count": {
+          "$ref": "#/$defs/range"
+        },
+        "signals": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

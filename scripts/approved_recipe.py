@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -93,6 +94,8 @@ def _validate(plan, base):
     _require(plan.get('recipe_schema') == SCHEMA, 'Unknown approved recipe schema')
     cfg = copy.deepcopy(plan['configuration'])
     _require(cfg.get('color_profile') in k.COLOR_PROFILES, 'Explicit supported color profile required')
+    _require(cfg.get('stroke_profile', 'source') in k.STROKE_PROFILES,
+             'Unsupported source stroke profile')
     _require(cfg.get('schema_version') in (1, 2), 'Unsupported configuration schema')
     source = cfg['source']
     source['path'] = str(k.resolve(base, source['path']))
@@ -123,10 +126,22 @@ def _validate(plan, base):
     for op in operations:
         kind = op['op']
         allowed = {'source': {'op', 'source_box', 'target_box'}, 'rect': {'op', 'box', 'width'},
-                   'line': {'op', 'points', 'width'}, 'text': {'op', 'point', 'value', 'fontsize', 'metadata_field'}}
+                   'line': {'op', 'points', 'width'}, 'text': {'op', 'point', 'value', 'fontsize', 'metadata_field'},
+                   'native_paths': {'op', 'source_box', 'target_box', 'maxscale', 'cell_margin',
+                                    'stroke_width', 'expected_path_count', 'expected_source_bbox'}}
         _require(kind in allowed and not (set(op) - allowed[kind]), 'Unknown operation or operation property')
         if kind == 'source':
             _rect(op['source_box']); _rect(op['target_box'])
+        elif kind == 'native_paths':
+            source_box = _rect(op['source_box']); _rect(op['target_box'])
+            expected_box = _rect(op['expected_source_bbox'])
+            _require(source_box.contains(expected_box), 'Native path bbox outside reviewed source cell')
+            _require(isinstance(op['expected_path_count'], int) and not isinstance(op['expected_path_count'], bool)
+                     and op['expected_path_count'] > 0, 'Invalid native path count')
+            for key, maximum in (('maxscale', 1), ('cell_margin', 10), ('stroke_width', 2)):
+                value = op[key]
+                _require(isinstance(value, (int, float)) and not isinstance(value, bool)
+                         and 0 < value <= maximum, 'Invalid native path ' + key)
         elif kind == 'rect':
             _rect(op['box'])
         elif kind == 'line':
@@ -139,6 +154,47 @@ def _validate(plan, base):
             size = op['fontsize' if kind == 'text' else 'width']
             _require(isinstance(size, (int, float)) and not isinstance(size, bool) and 0 < size <= 72, 'Invalid width/font size')
     return cfg, copy.deepcopy(operations)
+
+
+def _draw_native_paths(page, paths, op):
+    source_box = _rect(op['source_box'])
+    target_box = _rect(op['target_box'])
+    selected = [path for path in paths if source_box.contains(path['rect'])]
+    _require(len(selected) == op['expected_path_count'], 'Native path inventory changed')
+    bounds = fitz.Rect(selected[0]['rect'])
+    for path in selected[1:]:
+        bounds |= path['rect']
+    _require(all(abs(float(a) - float(b)) < 1e-5 for a, b in zip(bounds, op['expected_source_bbox'])),
+             'Native path bounds changed')
+    margin = op['cell_margin']
+    scale = min(op['maxscale'], (target_box.width - margin) / bounds.width,
+                (target_box.height - margin) / bounds.height)
+    _require(0 < scale <= op['maxscale'], 'Native path target cell is too small')
+    dx = (target_box.x0 + target_box.x1 - scale * (bounds.x0 + bounds.x1)) / 2
+    dy = (target_box.y0 + target_box.y1 - scale * (bounds.y0 + bounds.y1)) / 2
+    def point(value):
+        return fitz.Point(value.x * scale + dx, value.y * scale + dy)
+    for path in selected:
+        shape = page.new_shape()
+        for item in path['items']:
+            if item[0] == 'l':
+                shape.draw_line(point(item[1]), point(item[2]))
+            elif item[0] == 'c':
+                shape.draw_bezier(*(point(p) for p in item[1:]))
+            elif item[0] == 're':
+                rect = item[1]
+                shape.draw_rect(fitz.Rect(point(rect.tl), point(rect.br)))
+            elif item[0] == 'qu':
+                quad = item[1]
+                shape.draw_quad(fitz.Quad(point(quad.ul), point(quad.ur),
+                                          point(quad.ll), point(quad.lr)))
+            else:
+                raise ValueError('Unsupported source vector path item')
+        shape.finish(width=op['stroke_width'],
+                     color=k.BLUE if path['color'] is not None else None,
+                     fill=k.BLUE if path['fill'] is not None else None,
+                     even_odd=path['even_odd'], closePath=path['closePath'])
+        shape.commit()
 
 
 def _bindings(cfg, source, baseline):
@@ -187,16 +243,26 @@ def _protect(paths, protected):
 def _compose(cfg, operations, source, directory):
     _, colored, _, _ = k.cached_source(cfg, source, directory / '.cache')
     ps = list(k.placements(cfg))
-    with fitz.open(colored) as original:
+    with fitz.open(colored) as original, fitz.open(source) as raw:
+        raw_page = raw[0]
+        raw_page.set_rotation(cfg['source']['rotation'])
+        raw_page.remove_rotation()
+        raw_paths = raw_page.get_drawings() if any(op['op'] == 'native_paths' for op in operations) else []
         pagebox = fitz.Rect(0, 0, *k.PAGE)
         for item in ps + [op for op in operations if op['op'] == 'source']:
             _require(original[0].rect.contains(_rect(item['source_box'])) and pagebox.contains(_rect(item['target_box'])),
                      'Source or target crop lies outside its page')
+        for item in (op for op in operations if op['op'] == 'native_paths'):
+            _require(raw_page.rect.contains(_rect(item['source_box']))
+                     and pagebox.contains(_rect(item['target_box'])),
+                     'Native source or target crop lies outside its page')
         doc, page = k.compose_document(cfg, colored, cfg['assets'], ps)
         with doc:
             for op in operations:
                 if op['op'] == 'source':
                     page.show_pdf_page(_rect(op['target_box']), original, 0, clip=_rect(op['source_box']))
+                elif op['op'] == 'native_paths':
+                    _draw_native_paths(page, raw_paths, op)
                 elif op['op'] == 'rect':
                     _require(pagebox.contains(_rect(op['box'])), 'Rectangle outside page')
                     page.draw_rect(_rect(op['box']), color=k.BLUE, width=op['width'])
@@ -251,6 +317,7 @@ def freeze(args):
 
 
 def _replay(args):
+    started = time.perf_counter()
     recipe_path = Path(args.recipe).resolve(); recipe = _read(recipe_path)
     _require(recipe.get('engineering_release') is False, 'Recipe must be visual-only, not an engineering release')
     _require(recipe.get('recipe_sha256') == _hash({key: value for key, value in recipe.items() if key != 'recipe_sha256'}), 'Frozen recipe changed')
@@ -278,18 +345,25 @@ def _replay(args):
                 _require(_bindings(cfg, source, baseline) == binding and k.digest(recipe_path) == owner['recipe_file_sha256']
                          and k.digest(pdf) == owner['output_sha256'] and k.digest(png) == owner['preview_sha256'],
                          'Input, recipe, or output changed while checking cached replay')
-                return dict(owner, reused=True, output=str(out))
+                return dict(owner, reused=True, output=str(out),
+                            generation_seconds=0,
+                            qa_seconds=round(time.perf_counter()-started, 3))
     report = {'status': 'REPLAY_FAILED', 'engineering_release': False, 'source_sha256': binding['source_sha256'],
               'recipe_sha256': recipe['recipe_sha256'], 'recipe_file_sha256': k.digest(recipe_path), 'output': str(out)}
     try:
         with tempfile.TemporaryDirectory(prefix='.replay-', dir=out) as temp:
-            stage = Path(temp); _compose(cfg, operations, source, stage)
+            stage = Path(temp)
+            generation_started = time.perf_counter()
+            _compose(cfg, operations, source, stage)
+            report['generation_seconds'] = round(time.perf_counter()-generation_started, 3)
             actual, _ = _visual(stage / 'drawing.pdf', stage / 'preview.png')
             report.update(actual_visual=actual, expected_visual=expected)
             _require(actual == expected, 'Replayed page differs from frozen baseline')
             _require(_bindings(cfg, source, baseline) == binding and k.digest(recipe_path) == report['recipe_file_sha256'], 'Input/recipe/engine changed during replay')
             report.update(status=STATUS, output_sha256=k.digest(stage / 'drawing.pdf'),
-                          preview_sha256=k.digest(stage / 'preview.png'), visual_sha256=actual['sha256'], different_pixels=0, reused=False)
+                          preview_sha256=k.digest(stage / 'preview.png'), visual_sha256=actual['sha256'],
+                          different_pixels=0, reused=False,
+                          qa_seconds=round(time.perf_counter()-started-report['generation_seconds'], 3))
             for name in ARTIFACTS[:2]:
                 (stage / name).replace(out / name)
     except Exception as exc:

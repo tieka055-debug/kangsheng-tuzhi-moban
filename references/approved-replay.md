@@ -64,7 +64,7 @@ python scripts/kangsheng.py replay-batch --registry REGISTRY.json \
 
 | 部分 | 含义 |
 |---|---|
-| `configuration` | 沿用常规 cfg 的 `source`、`fields`、`groups`、`assets` 等配置；要求显式 `color_profile`，可为 `cyan-gold-v1` 或 `legacy-v1`，缺省或未知值均停止 |
+| `configuration` | 沿用常规 cfg 的 `source`、`fields`、`groups`、`assets` 等配置；要求显式 `color_profile`，可为 `cyan-gold-v1` 或 `legacy-v1`，缺省或未知值均停止。可按具体已认可原件绑定 `stroke_profile`；缺省保持原源线宽 |
 | `operations` | 已认可的有序操作序列，只执行明确列出的操作 |
 | 源绑定 | 原件内容 SHA256 及配方中的本地定位信息 |
 | 配方绑定 | 配方内容哈希，防止操作或配置被悄悄改动 |
@@ -75,6 +75,7 @@ python scripts/kangsheng.py replay-batch --registry REGISTRY.json \
 操作类型：
 
 - `source`：从原 PDF 直接复制指定原矢量区域；技术值、表格、尺寸图、公差及符号由原件承载，不用 OCR 重打。
+- `native_paths`：只在逐源认可配方中使用。按已核定源框从该原件读取矢量路径，强制匹配路径数量与联合边界，在目标格内等比绘制；可用于已认可的非可提取文字/技术符号重排，不从其他型号借用路径或数值。未知绘图算子、源结构变化或非等比放置均停止。
 - `rect` / `line`：执行配方明确指定的页框、表格闭合线或版式线条，不凭空添加技术内容。
 - `text`：目前只接受真实日期元数据，格式为 `YYYY-MM-DD` 或 `DD-MM-YYYY`，分隔符也可为 `.` 或 `/`；不用于重录尺寸、性能、公差或其他技术数值。
 
@@ -83,6 +84,7 @@ python scripts/kangsheng.py replay-batch --registry REGISTRY.json \
 ## 认可版式约定
 
 - 颜色策略按配方显式保存。`cyan-gold-v1` 将原图青色针脚转为金色，其余非白色内容转为蓝色；`legacy-v1` 保留旧行为。冻结时必须明确选择并绑定策略，新策略不全局覆盖旧稿。
+- 细线兼容策略 `legacy-thin-stroke-boost-v1` 只可经具体原件、认可 PDF 与 4×零差冻结后使用；默认 `source` 保留源线宽，不能把旧兼容加粗推广到其他图纸。
 - 公差用原矢量单元格，保留全部有内容的格子及闭合网格，底部贴齐；不得用手工转录的公差值或重新绘制的数据表替换原件。
 - 空公差格的删除依据必须来自这份原件，不能由另一型号的空列推断；新源清单的排除区仍按 v2 审核。
 - 投影符号保持完整，并在其专用格内居中；型号表位于右上，性能块位于其下。

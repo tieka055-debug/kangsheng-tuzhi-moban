@@ -2,13 +2,18 @@
 """One reviewed manifest -> faithful vector copy -> reproducible QA (no upload)."""
 from __future__ import annotations
 import argparse
+import contextlib
+import fcntl
 import hashlib
 import json
 import math
+import os
 import re
 import sys
 import time
+import traceback
 import unicodedata
+import uuid
 from pathlib import Path
 import pymupdf as fitz
 import numpy as np
@@ -16,8 +21,10 @@ from scipy.ndimage import affine_transform, binary_dilation, label, find_objects
 from frame import (BLUE, PAGE, FRAME, TITLE_BOX, TOLERANCE_BOX, PROJECTION_BOX,
                    draw_frame_and_title)
 
-VERSION = '2.1.0'
+VERSION = '2.1.0-candidate'
+QA_RULESET = 'source-preservation-plus-approved-english-tolerance-v1'
 COLOR_PROFILES = {'legacy-v1', 'cyan-gold-v1'}
+STROKE_PROFILES = {'source', 'legacy-thin-stroke-boost-v1'}
 S = 4
 EDGE = 2  # 0.5 PDF point at 4x rendering, renderer boundary antialiasing only.
 DILATE = 2
@@ -63,8 +70,16 @@ def canonical(value):
 
 
 def inventory_hash(cfg):
-    # Review is the only excluded key. Source paths, assets, fields and geometry are bound.
-    return hashlib.sha256(canonical({k:v for k,v in cfg.items() if k!='review'})).hexdigest()
+    # A successful output is reusable only with the same recipe, actual engine,
+    # frame, QA rules and asset bytes. Source review has its separate hash.
+    recipe={k:v for k,v in cfg.items() if k!='review' and not k.startswith('_')}
+    assets=cfg.get('assets',{})
+    base=Path(cfg['_manifest_path']).parent if cfg.get('_manifest_path') else Path.cwd()
+    asset_hashes={key:digest(resolve(base,path)) if resolve(base,path).is_file() else 'MISSING'
+                  for key,path in assets.items()}
+    runtime={'engine':digest(__file__),'frame':digest(Path(__file__).with_name('frame.py')),
+             'version':VERSION,'qa_ruleset':QA_RULESET,'assets':asset_hashes}
+    return hashlib.sha256(canonical({'recipe':recipe,'runtime':runtime})).hexdigest()
 
 
 def source_inventory_hash(cfg):
@@ -83,6 +98,12 @@ def source_inventory_hash(cfg):
     value={'source':source,'identity':cfg.get('identity',{}),'fields':cfg.get('fields',{}),
            'groups':groups,'coverage':cfg.get('coverage',{}),
            'table_headers':cfg.get('table_headers',[])}
+    if cfg.get('approved_tolerance_reflow'):
+        value['tolerance_source_map_sha256']=cfg['approved_tolerance_reflow']['source_map_sha256']
+    if cfg.get('approved_uniform_view_scales'):
+        value['approved_uniform_view_scales']=cfg['approved_uniform_view_scales']
+        value['view_pcb_scales']=[(g['id'],g['scale']) for g in cfg['groups']
+                                  if g['kind'] in {'view','pcb'}]
     return hashlib.sha256(canonical(value)).hexdigest()
 
 
@@ -93,6 +114,150 @@ def resolve(base, value):
 
 def compact(value):
     return ''.join(unicodedata.normalize('NFKC',str(value)).split())
+
+
+def tolerance_lines(rows):
+    """The accepted four-line typography is data, never a global value default."""
+    tiers=['X.','X.X','X.XX','X.XXX']
+    require(len(rows)==4 and [row.get('tier') for row in rows]==tiers,
+            'Approved English tolerance mode needs four reviewed source tiers')
+    require(all(re.fullmatch(r'±\d+\.\d{2}',row.get('value','')) for row in rows),
+            'Tolerance sign, digits or decimal places invalid')
+    return [row['tier']+' '+row['value'] for row in rows]
+
+
+def parsed_tolerance_lines(lines):
+    result=[]
+    for line in lines:
+        match=re.fullmatch(r'(X\.(?:X){0,3})\s+(±\d+\.\d{2})',line.strip())
+        require(match is not None,'Approved English tolerance line malformed')
+        result.append(match[1]+' '+match[2])
+    return result
+
+
+def load_tolerance_reflow(cfg,manifest_path,check_source_raster=True):
+    """Validate the authorized region's immutable source and visual evidence."""
+    ref=cfg.get('approved_tolerance_reflow')
+    if not ref:return None
+    require(cfg.get('schema_version')==2,'Approved tolerance reflow requires manifest v2')
+    base=Path(manifest_path).parent
+    source_map=resolve(base,ref['source_map_path'])
+    layout_path=resolve(base,ref['layout_path'])
+    approved_pdf=resolve(base,ref['approved_pdf_path'])
+    for path,key in [(source_map,'source_map_sha256'),(layout_path,'layout_sha256'),
+                     (approved_pdf,'approved_pdf_sha256')]:
+        require(path.is_file() and digest(path)==ref[key],f'Approved tolerance evidence changed: {key}')
+    evidence=json.loads(source_map.read_text());layout=json.loads(layout_path.read_text())
+    require(evidence['source_sha256']==cfg['source']['sha256']==layout['source_sha256']
+            and evidence['record_id']==cfg['identity']['record_id']
+            and evidence['model']==cfg['fields']['model']==layout['fields']['model'],
+            'Approved tolerance source/model/record binding differs')
+    require(evidence['source_unit']==cfg['fields']['unit']==layout['fields']['unit'],
+            'Approved tolerance unit differs from this source')
+    require(evidence.get('source_inventory_complete') is True,
+            'Tolerance source field inventory is not declared complete')
+    require(evidence.get('additional_tolerance_conditions')==[],
+            'Additional condition inside the source tolerance table is outside the approved four-line mode')
+    require(evidence.get('source_header')=='未注公差 TOOLERANCE'
+            and evidence.get('source_projection_label')=='视图方法 PROJECTION',
+            'Source tolerance/projection labels need a reviewed mapping')
+    require(evidence.get('authorized_heading')==['UNLESS OTHERWISE','SPECIFIED, TOLERANCE:']
+            and evidence.get('authorized_internal_grid') is False,
+            'Approved tolerance visual contract differs')
+    require(evidence.get('projection_symbol')=='source_projection_group_to_bottom_right',
+            'Projection mapping differs')
+    group=[g for g in cfg['groups'] if g['kind']=='tolerance']
+    projection=[g for g in cfg['groups'] if g['kind']=='projection']
+    require(len(group)==len(projection)==1 and
+            fitz.Rect(evidence['source_tolerance_box']).contains(fitz.Rect(group[0]['reviewed_source_extent'])),
+            'Tolerance/projection source group missing or outside evidenced source box')
+    source_path=resolve(base,cfg['source']['path'])
+    require(digest(source_path)==evidence['source_sha256'],'Source tolerance evidence PDF changed')
+    if check_source_raster:
+        with fitz.open(source_path) as doc:
+            page=doc[0];page.set_rotation(cfg['source']['rotation']);page.remove_rotation()
+            samples=page.get_pixmap(matrix=fitz.Matrix(6,6),
+                clip=fitz.Rect(evidence['source_tolerance_box']),alpha=False).samples
+        require(hashlib.sha256(samples).hexdigest()==evidence['source_tolerance_6x_samples_sha256'],
+                'Source tolerance object/raster evidence changed')
+    expected=tolerance_lines(evidence['rows'])
+    require(parsed_tolerance_lines(layout['fields']['tolerances'])==expected,
+            'Approved template values differ from this product source mapping')
+    review_path=resolve(base,evidence['field_review_report'])
+    require(review_path.is_file() and digest(review_path)==evidence['field_review_report_sha256'],
+            'Independent tolerance field comparison evidence missing or changed')
+    review=json.loads(review_path.read_text())
+    reviewed=[row for row in review.get('rows',[]) if row.get('record_id')==evidence['record_id']]
+    require(review.get('reviewer_identifier') and len(reviewed)==1,
+            'Independent tolerance field comparison did not identify this product')
+    reviewed=reviewed[0]
+    require(reviewed.get('source_sha256')==evidence['source_sha256']
+            and reviewed.get('source_tolerance_fields')==expected
+            and reviewed.get('tolerance_values_status')=='PASS_VISUAL_FIELD_COMPARISON'
+            and reviewed.get('unit_status')=='PASS',
+            'Independent tolerance field comparison is not complete for this source')
+    external=evidence.get('additional_technical_conditions',[])
+    require(isinstance(external,list),'Additional technical conditions inventory malformed')
+    if external:
+        ext_path=resolve(base,evidence['external_condition_review_report'])
+        require(ext_path.is_file() and digest(ext_path)==evidence['external_condition_review_report_sha256'],
+                'Independent external condition evidence missing or changed')
+        ext_report=json.loads(ext_path.read_text())
+        ext_rows=[x for x in ext_report.get('rows',[]) if x.get('record_id')==evidence['record_id']]
+        require(len(ext_rows)==1 and ext_rows[0].get('source_sha256')==evidence['source_sha256'],
+                'External condition review/source identity differs')
+        ext_row=ext_rows[0]
+        require(len(external)==1 and external[0]['text']==ext_row.get('condition')
+                and external[0]['carrying_group_id']==ext_row.get('carrying_group_id')
+                and ext_row.get('condition_piece_qa',{}).get('pass') is True
+                and ext_row.get('candidate_pdf_sha256'),
+                'Additional technical condition not independently located in its source vector group')
+        carrying=[g for g in cfg['groups'] if g['id']==external[0]['carrying_group_id']]
+        require(len(carrying)==1 and carrying[0]['kind']=='pcb'
+                and carrying[0]['clips']==ext_row.get('source_clips'),
+                'Additional technical condition carrying group changed')
+    else:
+        require(reviewed.get('extra_conditions_status')=='PASS_VISUAL_INSPECTION',
+                'Additional tolerance conditions have not been inventoried')
+    return {'evidence':evidence,'layout':layout,'approved_pdf':approved_pdf,
+            'expected_lines':expected,'source_map_sha256':digest(source_map),
+            'approved_pdf_sha256':digest(approved_pdf)}
+
+
+def validate_approved_uniform_scales(cfg,manifest_path):
+    """Permit only source-bound, approved *uniform* view/PCB scaling with NTS."""
+    ref=cfg.get('approved_uniform_view_scales')
+    changed=[g for g in cfg['groups'] if g['kind'] in {'view','pcb'} and
+             abs(float(g['scale'])-1)>1e-9]
+    if not changed:
+        require(not ref,'Unused approved_uniform_view_scales declaration')
+        return
+    require(ref is not None,'View/PCB scaling needs approved_uniform_view_scales evidence')
+    require(cfg['fields']['scale_text']=='NTS',
+            'Mixed view/PCB physical scales require SCALE: NTS; source 3:1 cannot be retained')
+    base=Path(manifest_path).parent
+    layout_path=resolve(base,ref['layout_path'])
+    require(layout_path.is_file() and digest(layout_path)==ref['layout_sha256'],
+            'Approved view scale reference missing or changed')
+    layout=json.loads(layout_path.read_text())
+    require(layout['source_sha256']==cfg['source']['sha256'],
+            'Approved view scales belong to a different source')
+    approved_pdf=resolve(base,layout['output'])
+    require(approved_pdf.is_file() and digest(approved_pdf)==layout['output_sha256'],
+            'Approved view scale PDF missing or changed')
+    for g in changed:
+        box=union_box(g['clips']);matches=[]
+        for item in layout['placements']:
+            src=fitz.Rect(item['source_box'])
+            if box.contains(src):matches.append(item)
+        require(matches,f'No approved placement for scaled group: {g["id"]}')
+        source_union=union_box([x['source_box'] for x in matches])
+        target_union=union_box([x['target_box'] for x in matches])
+        require(all(abs(float(item['scale'])-float(g['scale']))<1e-6 for item in matches)
+                and all(abs(a-b)<.03 for a,b in zip(source_union,box))
+                and abs(target_union.x0-float(g['dst'][0]))<.03
+                and abs(target_union.y0-float(g['dst'][1]))<.03,
+                f'Scaled group differs from source-bound approved placement: {g["id"]}')
 
 
 def rect(value):
@@ -128,28 +293,83 @@ def restored_rules(cfg):
         origin=union_box(group['clips']);scale=float(group['scale'])
         for rule in group['restored_source_rules']:
             width=float(rule['width'])
+            cap=rule.get('line_cap','butt')
+            end=width/2 if cap in {'round','square'} else 0
             if rule['orientation']=='vertical':
                 x=float(rule['x']);y0=float(rule['y0']);y1=float(rule['y1'])
-                yield {'id':group['id'],'kind':group['kind'],'source_box':[x-width/2,y0,x+width/2,y1],
+                yield {'id':group['id'],'kind':group['kind'],'source_box':[x-width/2,y0-end,x+width/2,y1+end],
                        'target_line':((group['dst'][0]+(x-origin.x0)*scale,
                                        group['dst'][1]+(y0-origin.y0)*scale),
                                       (group['dst'][0]+(x-origin.x0)*scale,
                                        group['dst'][1]+(y1-origin.y0)*scale)),
-                       'width':width*scale,'color':rule.get('color','gold')}
+                       'width':width*scale,'color':rule.get('color','gold'),'line_cap':cap}
             else:
                 y=float(rule['y']);x0=float(rule['x0']);x1=float(rule['x1'])
-                yield {'id':group['id'],'kind':group['kind'],'source_box':[x0,y-width/2,x1,y+width/2],
+                yield {'id':group['id'],'kind':group['kind'],'source_box':[x0-end,y-width/2,x1+end,y+width/2],
                        'target_line':((group['dst'][0]+(x0-origin.x0)*scale,
                                        group['dst'][1]+(y-origin.y0)*scale),
                                       (group['dst'][0]+(x1-origin.x0)*scale,
                                        group['dst'][1]+(y-origin.y0)*scale)),
-                       'width':width*scale,'color':rule.get('color','gold')}
+                       'width':width*scale,'color':rule.get('color','gold'),'line_cap':cap}
 
 
 def draw_restored_rules(page,cfg):
     for rule in restored_rules(cfg):
         color=BLUE if rule['color']=='blue' else (217/255,154/255,0)
-        page.draw_line(*rule['target_line'],color=color,width=rule['width'])
+        page.draw_line(*rule['target_line'],color=color,width=rule['width'],
+                       lineCap={'butt':0,'round':1,'square':2}[rule['line_cap']])
+
+
+def restored_rule_vector_checks(page,cfg):
+    """Count painted rules, not source paths that remain in a clipped XObject."""
+    rules=list(restored_rules(cfg))
+    if not rules:return []
+    drawings=page.get_drawings()
+    result=[]
+    for rule in rules:
+        p,q=rule['target_line']
+        expected_color=BLUE if rule['color']=='blue' else (217/255,154/255,0)
+        expected_cap={'butt':0,'round':1,'square':2}[rule['line_cap']]
+        matches=[]
+        for drawing in drawings:
+            for item in drawing['items']:
+                if item[0]!='l':continue
+                a,b=item[1:3]
+                same=(abs(a.x-p[0])<.03 and abs(a.y-p[1])<.03 and
+                      abs(b.x-q[0])<.03 and abs(b.y-q[1])<.03)
+                reverse=(abs(b.x-p[0])<.03 and abs(b.y-p[1])<.03 and
+                         abs(a.x-q[0])<.03 and abs(a.y-q[1])<.03)
+                if not (same or reverse):continue
+                color=drawing.get('color')
+                equivalent=(drawing.get('width') is not None and
+                    abs(drawing['width']-rule['width'])<.03 and
+                    drawing.get('lineCap') and expected_cap in drawing['lineCap'] and
+                    color is not None and all(abs(x-y)<.03 for x,y in zip(color,expected_color)))
+                matches.append({'seqno':drawing['seqno'],'attributes_match':bool(equivalent)})
+        # PyMuPDF exposes vectors inside show_pdf_page's clipping XObject in
+        # get_drawings(), even when none of their stroke can actually paint.
+        # The source clip must be strictly outside the measured stroke, and
+        # only an early, copied path may be discounted. A second late rule
+        # remains a visible duplicate and fails.
+        masked=0
+        group=next(g for g in cfg['groups'] if g['id']==rule['id'])
+        original=next((r for r in group.get('restored_source_rules',[])
+                       if r['orientation']==('vertical' if p[0]==q[0] else 'horizontal')),None)
+        if rule['kind']=='table' and original and matches:
+            clip=union_box(group['clips'])
+            outside=(clip.x1<float(original['x'])-float(original['width'])/2-.005
+                     if original['orientation']=='vertical' else
+                     clip.y1<float(original['y'])-float(original['width'])/2-.005)
+            latest=max(x['seqno'] for x in matches)
+            if outside and any(latest-x['seqno']>10 for x in matches):masked=1
+        visible=len(matches)-masked
+        good=sum(x['attributes_match'] for x in matches)
+        result.append({'id':rule['id'],'target_line':rule['target_line'],
+                       'width':rule['width'],'line_cap':rule['line_cap'],
+                       'raw_matching_paths':len(matches),'masked_source_paths':masked,
+                       'visible_rule_count':visible,'matching_attributes_count':good,
+                       'pass':visible==1 and good==len(matches)})
+    return result
 
 
 def read_manifest(path,check_review=True):
@@ -157,6 +377,7 @@ def read_manifest(path,check_review=True):
     schema=cfg.get('schema_version')
     require(schema in {1,2},'schema_version must equal 1 or 2')
     require(cfg.get('color_profile','legacy-v1') in COLOR_PROFILES,'Unknown color profile')
+    require(cfg.get('stroke_profile','source') in STROKE_PROFILES,'Unknown stroke profile')
     source=resolve(path.parent,cfg['source']['path'])
     require(source.is_file(),'Source PDF missing')
     require(digest(source)==cfg['source']['sha256'],'Source hash changed; inspect again')
@@ -189,6 +410,12 @@ def read_manifest(path,check_review=True):
         require(tolerance_groups
                 or fields.get('no_tolerance_block_reason'),
                 'Manifest v2 needs a source tolerance group or no_tolerance_block_reason')
+    require('approved_tolerance_visual_trial' not in cfg,
+            'Temporary tolerance visual trial is superseded by approved_tolerance_reflow')
+    if cfg.get('approved_tolerance_reflow'):
+        require(schema==2 and len(tolerance_groups)==1,
+                'Approved tolerance reflow needs the complete source tolerance group')
+        load_tolerance_reflow(cfg,path)
     small_font=fitz.Font(fontname='helv')
     small_values=[fields[k] for k in ['scale_text','unit','sheet']]+[fields.get('revision','')]+fields['tolerances']
     require(all(small_font.has_glyph(ord(c)) for value in small_values for c in value),
@@ -202,8 +429,11 @@ def read_manifest(path,check_review=True):
     for g in cfg['groups']:
         require(g['kind'] in KINDS and g['clips'],f'Invalid group {g["id"]}')
         require(0<float(g['scale'])<=4 and len(g['dst'])==2,'Invalid uniform placement scale/point')
-        if g['kind'] in {'view','pcb'}:
-            require(abs(float(g['scale'])-1)<1e-9, 'Dimensional view/PCB scale must remain 1.0; preserve source physical scale')
+        require(not any(k in g for k in ('scale_x','scale_y','stretch','transform')),
+                f'Anisotropic or hidden transform is forbidden: {g["id"]}')
+        if g['kind'] in {'view','pcb'} and not cfg.get('approved_uniform_view_scales'):
+            require(abs(float(g['scale'])-1)<1e-9,
+                    'Dimensional view/PCB scale must remain 1.0 without approved NTS evidence')
         for b in g['clips']: rect(b)
         # This is a reviewer-declared technical envelope from the full, uncropped
         # source page.  It prevents an operator from silently narrowing a clip
@@ -233,19 +463,28 @@ def read_manifest(path,check_review=True):
                     f'Only a reviewed table/tolerance rule may be restored: {g["id"]}')
             width=float(rule['width'])
             require(width>0 and rule.get('color','gold') in {'gold','blue'},'Invalid restored source rule: '+g['id'])
+            require(rule.get('line_cap','butt') in {'butt','round','square'},
+                    'Invalid restored source rule line cap: '+g['id'])
             if rule['orientation']=='vertical':
                 x=float(rule['x']);y0=float(rule['y0']);y1=float(rule['y1'])
                 require(extent.x0<=x<=extent.x1 and extent.y0<=y0<y1<=extent.y1
                         and clip_union.x1<=x<=extent.x1+1e-6,
                         f'Invalid restored source rule: {g["id"]}')
+                if g['kind']=='table':
+                    require(clip_union.x1<float(x)-width/2-.005,
+                            f'Restored table edge duplicates source stroke: {g["id"]}')
             else:
                 y=float(rule['y']);x0=float(rule['x0']);x1=float(rule['x1'])
                 require(extent.y0<=y<=extent.y1 and extent.x0<=x0<x1<=extent.x1
                         and clip_union.y1<=y<=extent.y1+1e-6,
                         f'Invalid restored source rule: {g["id"]}')
+                if g['kind']=='table':
+                    require(clip_union.y1<float(y)-width/2-.005,
+                            f'Restored table edge duplicates source stroke: {g["id"]}')
         for i,a in enumerate(g['clips']):
             for b in g['clips'][i+1:]:
                 require((fitz.Rect(a)&fitz.Rect(b)).is_empty,'Same-group clips must not duplicate content')
+    validate_approved_uniform_scales(cfg,path)
     coverage=cfg['coverage']
     if schema>=2:
         require(coverage.get('mode')=='full-page-minus-exclusions',
@@ -302,6 +541,7 @@ def read_manifest(path,check_review=True):
                     'Source clips or inventory changed after review')
         else:
             require(review.get('inventory_sha256')==inventory_hash(cfg),'Inventory changed after review')
+    cfg['_manifest_path']=str(path)  # runtime resolution only; excluded from recipe hash
     return cfg,path,source,assets
 
 
@@ -327,7 +567,7 @@ def svg_recolor(svg,profile='legacy-v1'):
     return svg.replace('<svg ',f'<svg fill="{HEX_BLUE}" ',1)
 
 
-def native_recolor(source,target,profile='legacy-v1'):
+def native_recolor(source,target,profile='legacy-v1',stroke_profile='source'):
     # A PDF parser, not regex replacement: preserves all text/font and geometry operators.
     import pikepdf
     pdf=pikepdf.open(source);seen=set()
@@ -339,7 +579,12 @@ def native_recolor(source,target,profile='legacy-v1'):
             require(isinstance(inst,pikepdf.ContentStreamInstruction),'Inline image requires SVG fallback')
             args,op=inst.operands,str(inst.operator)
             require(op not in {'cs','CS','sc','SC','scn','SCN'},'Custom/pattern color requires SVG fallback')
-            if op in {'rg','RG','g','G','k','K'}:
+            if op == 'w' and stroke_profile == 'legacy-thin-stroke-boost-v1' \
+                    and len(args) == 1 and 0 < float(args[0]) < .5:
+                # Compatibility with an explicitly approved legacy print.
+                # This changes stroke weight, never geometry or source values.
+                instructions.append(([.5], pikepdf.Operator('w')))
+            elif op in {'rg','RG','g','G','k','K'}:
                 nums=[float(x) for x in args]
                 if op in {'g','G'}: rgb=(nums[0],)*3
                 elif op in {'k','K'}:
@@ -359,7 +604,9 @@ def native_recolor(source,target,profile='legacy-v1'):
 
 def cached_source(cfg,source,cache):
     profile=cfg.get('color_profile','legacy-v1')
+    stroke_profile=cfg.get('stroke_profile','source')
     require(profile in COLOR_PROFILES,'Unknown color profile')
+    require(stroke_profile in STROKE_PROFILES,'Unknown stroke profile')
     original=fitz.open(source)
     require(len(original)==cfg['source']['expected_pages'],'Page count changed; review all pages')
     require(len(original)==1,'This single-sheet command requires a reviewed one-page PDF; never silently drops pages')
@@ -368,7 +615,7 @@ def cached_source(cfg,source,cache):
     key=hashlib.sha256(canonical({'sha':digest(source),'page':cfg['source']['page'],
           'rotation':cfg['source']['rotation'],'version':VERSION,'engine':digest(__file__),
           'fitz':fitz.__version__,'renderer':cfg.get('renderer','auto'),
-          'color_profile':profile})).hexdigest()[:24]
+          'color_profile':profile,'stroke_profile':stroke_profile})).hexdigest()[:24]
     neutral=cache/(key+'-source.pdf');colored=cache/(key+'-blue.pdf');info=cache/(key+'.json')
     if neutral.exists() and colored.exists() and info.exists():
         old=json.loads(info.read_text())
@@ -382,7 +629,7 @@ def cached_source(cfg,source,cache):
     used='native'
     try:
         if renderer=='svg':raise RuntimeError('Explicit SVG path renderer')
-        native_recolor(neutral,colored,profile)
+        native_recolor(neutral,colored,profile,stroke_profile)
     except (ImportError,ValueError,RuntimeError):
         if renderer=='native':raise
         used='svg'
@@ -550,6 +797,8 @@ def fill(mask,box):
 
 
 def mask_components(mask,min_pixels=4,limit=50):
+    if not mask.any():
+        return []
     labels,count=label(binary_dilation(mask,iterations=1));items=[]
     for component_id,slices in enumerate(find_objects(labels),1):
         if slices is None:continue
@@ -567,6 +816,7 @@ def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
             'Output is not one landscape A4 page')
     a=render_array(src[0]) if source_pixels is None else source_pixels
     ink=a[:,:,:3].min(2)<150
+    weak_ink=a[:,:,:3].min(2)<245
     interest=np.zeros(ink.shape,bool);covered=np.zeros_like(interest)
     if cfg.get('schema_version',1)>=2:
         fill(interest,list(src[0].rect))
@@ -580,12 +830,12 @@ def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
         for word in src[0].get_text('words'):
             if not (box&fitz.Rect(word[:4])).is_empty:text.append(str(word[4]))
         exclusion_audit.append({'kind':ex.get('kind','legacy'),'box':ex['box'],'reason':ex['reason'],
-                                'excluded_ink_pixels':int((erase&(a[:,:,:3].min(2)<245)).sum()),
+                                'excluded_ink_pixels':int((erase&weak_ink).sum()),
                                 'extractable_text':' '.join(text)[:500]})
         interest &= ~erase
     for p in ps:fill(covered,p['source_box'])
     for rule in restored_rules(cfg):fill(covered,rule['source_box'])
-    unplaced_mask=(a[:,:,:3].min(2)<245)&interest&~covered
+    unplaced_mask=weak_ink&interest&~covered
     unplaced=int(unplaced_mask.sum())
     z=render_array(out[0])[:,:,:3].astype(np.float32)
     # Compare at the SAME alpha threshold as black-on-white source <150.
@@ -618,26 +868,21 @@ def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
     global_missing_count=int(global_missing.sum());global_extra_count=int(global_extra.sum())
     global_pass=(global_missing_count<=GLOBAL_PIXEL_TOLERANCE
                  and global_extra_count<=GLOBAL_PIXEL_TOLERANCE)
-    masks=[]
-    for rgb in [BLUE,(217/255,154/255,0)]:
-        numerator=np.zeros(bg.shape[:2],np.float32);denominator=np.zeros_like(numerator)
-        for channel in range(3):
-            base=bg[:,:,channel].astype(np.float32);direction=base-rgb[channel]*255
-            numerator+=(base-z[:,:,channel])*direction;denominator+=direction*direction
-        alpha=numerator/np.maximum(denominator,1)
-        residual=np.zeros_like(alpha)
-        for channel in range(3):
-            base=bg[:,:,channel].astype(np.float32)
-            residual=np.maximum(residual,np.abs(z[:,:,channel]-(base-alpha*(base-rgb[channel]*255))))
-        masks.append((alpha>alpha_cutoff)&(residual<25))
-    act_all=masks[0]|masks[1]
-    weak_ink=a[:,:,:3].min(2)<245
     furniture=np.zeros(act_all.shape,bool)
-    # Source-mode tolerance has no generated furniture to exempt from QA.
-    for b in RESERVED[:1] if cfg.get('schema_version',1)>=2 else RESERVED:
+    raw_source_furniture=np.zeros(act_all.shape,bool)
+    # Only in the approved reflow mode, the generated English footer is
+    # furniture for *other groups' extra-ink accounting*. Source coverage and
+    # all non-tolerance missing-ink checks remain unchanged; this exact cell
+    # receives a separate field+approved-visual check below.
+    furniture_boxes=(RESERVED if cfg.get('approved_tolerance_reflow') or cfg.get('schema_version',1)<2
+                     else RESERVED[:1])
+    for b in furniture_boxes:
         fill(furniture,list(b))
+    fill(raw_source_furniture,list(RESERVED[0]))
     for h in cfg.get('table_headers',[]):fill(furniture,[h['xs'][0],h['y'][0],h['xs'][-1],h['y'][1]])
+    for h in cfg.get('table_headers',[]):fill(raw_source_furniture,[h['xs'][0],h['y'][0],h['xs'][-1],h['y'][1]])
     furniture=binary_dilation(furniture,iterations=2)  # approved frame stroke antialiasing outside its geometric centerline
+    raw_source_furniture=binary_dilation(raw_source_furniture,iterations=2)
     expected_union=np.zeros(act_all.shape,bool)
     for item in ps:
         u0,v0,u1,v1=item['target_box'];sx,sy,_,_=item['source_box'];sc=item['scale']
@@ -657,7 +902,9 @@ def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
         act=act_all[ys:ye,xs:xe]
         exp[:EDGE]=False;exp[-EDGE:]=False;exp[:,:EDGE]=False;exp[:,-EDGE:]=False
         missing=exp&~binary_dilation(act,iterations=DILATE)
-        extra=act & ~expected_allowed[ys:ye,xs:xe] & ~furniture[ys:ye,xs:xe]
+        furniture_for_piece=(raw_source_furniture if p['kind']=='tolerance' and
+                             cfg.get('approved_tolerance_reflow') else furniture)
+        extra=act & ~expected_allowed[ys:ye,xs:xe] & ~furniture_for_piece[ys:ye,xs:xe]
         extra[:EDGE]=False;extra[-EDGE:]=False;extra[:,:EDGE]=False;extra[:,-EDGE:]=False
         count=int(exp.sum());ratio=float(missing.sum()/max(1,count))
         extra_ratio=float(extra.sum()/max(1,count))
@@ -674,8 +921,47 @@ def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
                   'sheet':'SHEET:'+compact(cfg['fields']['sheet'])}
     field_counts={key:frame_text.count(token) for key,token in field_tokens.items()}
     title_ok=all(count==1 for count in field_counts.values())
-    ok=unplaced==0 and title_ok and global_pass and all(c['pass'] for c in checks)
-    return {'pass':ok,'scope':'Raster ink preservation checks only the independently inventoried full-sheet envelope; an independent full-sheet/number review remains required.',
+    tolerance_reflow=None
+    if cfg.get('approved_tolerance_reflow'):
+        ref=load_tolerance_reflow(cfg,cfg['_manifest_path'])
+        footer=out[0].get_text(clip=fitz.Rect(395,488,493,566))
+        actual=[]
+        for line in footer.splitlines():
+            match=re.fullmatch(r'(X\.(?:X){0,3})\s+(±\d+\.\d{2})',line.strip())
+            if match:actual.append(match[1]+' '+match[2])
+        headings=(footer.count('UNLESS OTHERWISE')==1 and
+                  footer.count('SPECIFIED, TOLERANCE:')==1)
+        fields_ok=headings and actual==ref['expected_lines']
+        box=fitz.Rect(395,488,493,566)
+        with fitz.open(ref['approved_pdf']) as approved:
+            approved_pix=approved[0].get_pixmap(matrix=fitz.Matrix(4,4),clip=box,alpha=False)
+        actual_pix=out[0].get_pixmap(matrix=fitz.Matrix(4,4),clip=box,alpha=False)
+        visual_ok=approved_pix.samples==actual_pix.samples
+        tol_ids={g['id'] for g in cfg['groups'] if g['kind']=='tolerance'}
+        projection_checks=[c for c in checks if c['id'] in
+                           {g['id'] for g in cfg['groups'] if g['kind']=='projection'}]
+        projection_ok=bool(projection_checks) and all(c['pass'] for c in projection_checks)
+        external_ids={item['carrying_group_id'] for item in ref['evidence'].get('additional_technical_conditions',[])}
+        external_checks=[c for c in checks if c['id'] in external_ids]
+        external_ok=(not external_ids or (bool(external_checks) and all(c['pass'] for c in external_checks)))
+        tolerance_reflow={'mode':'approved_english_source_bound','pass':fields_ok and visual_ok and projection_ok and external_ok,
+            'source_map_sha256':ref['source_map_sha256'],
+            'approved_pdf_sha256':ref['approved_pdf_sha256'],
+            'source_fields':ref['expected_lines'],'actual_fields':actual,
+            'source_unit':ref['evidence']['source_unit'],
+            'headings_pass':headings,'approved_visual_pixels_equal':visual_ok,
+            'projection_source_group_pass':projection_ok,
+            'additional_technical_conditions':ref['evidence'].get('additional_technical_conditions',[]),
+            'additional_technical_condition_groups_pass':external_ok,
+            'source_review_status':'REQUIRES_INDEPENDENT_REVIEW',
+            'raw_original_tolerance_checks':[c for c in checks if c['id'] in tol_ids]}
+        group_ok=all(c['pass'] for c in checks if c['id'] not in tol_ids) and tolerance_reflow['pass']
+    else:
+        group_ok=all(c['pass'] for c in checks)
+    restored_vector_checks=restored_rule_vector_checks(out[0],cfg)
+    restored_vectors_ok=all(item['pass'] for item in restored_vector_checks)
+    ok=unplaced==0 and title_ok and global_pass and group_ok and restored_vectors_ok
+    return {'pass':ok,'scope':'Raw source-table raster mismatch is retained in checks for approved reflow; only the source-bound English tolerance region uses field and approved-visual checks. Independent source/final review remains required.',
        'source_sha256':cfg['source']['sha256'],'output_sha256':digest(output),
        'inventory_sha256':inventory_hash(cfg),'source_inventory_sha256':source_inventory_hash(cfg),
        'source_unplaced_technical_ink_pixels':unplaced,
@@ -688,10 +974,12 @@ def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
        'global_missing_components':mask_components(global_missing),
        'global_unexpected_components':mask_components(global_extra),
        'global_pixel_tolerance':GLOBAL_PIXEL_TOLERANCE,
-       'brand_effective_dpi':brand_profile(assets['brand_strip'])['effective_dpi'],
-       'brand_profile':brand_profile(assets['brand_strip']),
+       'brand_effective_dpi':(brand:=brand_profile(assets['brand_strip']))['effective_dpi'],
+       'brand_profile':brand,
        'source_quality':source_quality or [],'exclusions':exclusion_audit,'engine_version':VERSION,
-       'checks':checks}
+       'checks':checks,'approved_tolerance_reflow':tolerance_reflow,
+       'restored_rule_vector_checks':restored_vector_checks,
+       'restored_rule_vectors_pass':restored_vectors_ok}
 
 
 def draw_table_headers(page,cfg):
@@ -717,13 +1005,17 @@ def compose_document(cfg,colored,assets,ps):
     doc=fitz.open();page=doc.new_page(width=PAGE[0],height=PAGE[1])
     page.insert_image(page.rect,filename=assets['background'])
     color=fitz.open(colored)
+    visual_trial=cfg.get('approved_tolerance_reflow')
     for item in ps:
-        if item['kind']!='projection':
+        if item['kind']!='projection' and not (visual_trial and item['kind']=='tolerance'):
             page.show_pdf_page(fitz.Rect(item['target_box']),color,0,clip=fitz.Rect(item['source_box']))
     draw_table_headers(page,cfg)
     fields=dict(cfg['fields']);fields['cjk_font_file']=assets['font']
+    if visual_trial:
+        ref=load_tolerance_reflow(cfg,cfg.get('_manifest_path',''))
+        fields['tolerances']=ref['layout']['fields']['tolerances']
     draw_frame_and_title(page,fields,assets,
-                         tolerance_mode='source' if cfg.get('schema_version',1)>=2 else 'legacy')
+                         tolerance_mode='legacy' if visual_trial or cfg.get('schema_version',1)==1 else 'source')
     for item in ps:
         if item['kind']=='projection':
             page.show_pdf_page(fitz.Rect(item['target_box']),color,0,clip=fitz.Rect(item['source_box']))
@@ -836,7 +1128,7 @@ def write_provenance(outdir,cfg,manifest,source,assets,audit):
         'output_sha256':audit['output_sha256']})
 
 
-def build(args):
+def _build_generate(args):
     start=time.perf_counter();cfg,mp,source,assets=read_manifest(args.manifest)
     outdir=Path(args.output).resolve()
     require(not any((outdir/name).exists() for name in ['drawing.pdf','candidate.pdf','audit.json','layout.json','preview.png','verify.json',
@@ -870,7 +1162,7 @@ def build(args):
                       'seconds':audit['generation_seconds'],'renderer':renderer,'cache_hit':hit},ensure_ascii=False))
 
 
-def draft(args):
+def _draft_generate(args):
     """Repeatable layout iteration that never claims review or release readiness."""
     start=time.perf_counter();cfg,mp,source,assets=read_manifest(args.manifest,check_review=False)
     outdir=Path(args.output).resolve();outdir.mkdir(parents=True,exist_ok=True)
@@ -903,83 +1195,308 @@ def draft(args):
     require(audit['pass'],'Draft QA failed; inspect draft-audit.json and the two draft review images')
 
 
-def batch(args):
-    """Single local ledger for small batches; no upload and no hidden retries."""
-    spec_path=Path(args.jobs).resolve();spec=json.loads(spec_path.read_text())
-    require(isinstance(spec.get('jobs'),list) and spec['jobs'],'Batch file needs a non-empty jobs list')
-    root=Path(args.output_root).resolve();root.mkdir(parents=True,exist_ok=True)
-    cache=Path(args.cache).resolve() if args.cache else root/'.cache'
-    state_path=root/'batch-state.json'
-    state=json.loads(state_path.read_text()) if state_path.exists() else {
-        'schema_version':1,'mode':args.mode,'jobs':{},'events':[]}
-    ids=[str(job.get('id','')) for job in spec['jobs']]
-    require(all(re.fullmatch(r'[A-Za-z0-9._-]+',job_id) for job_id in ids),'Batch job ids must be filesystem-safe')
-    require(len(ids)==len(set(ids)),'Batch job ids must be unique')
+CONTROL_SCHEMA = 2
+ARTIFACTS = {
+    'draft': ('draft.pdf', 'draft-audit.json', 'draft-board.png', 'draft-details.png', 'draft-preview.png'),
+    'build': ('drawing.pdf', 'audit.json', 'review-board.png', 'review-details.png',
+              'preview.png', 'layout.json', 'run.json', 'final-review-template.json')
+}
 
-    def persist():
-        state['updated_at_epoch']=int(time.time())
-        temp=state_path.with_suffix('.tmp');save_json(temp,state);temp.replace(state_path)
 
-    def current(job):
-        manifest=resolve(spec_path.parent,job['manifest']);cfg=json.loads(manifest.read_text())
-        recipe=inventory_hash(cfg);entry=state['jobs'].get(job['id'])
-        if entry and entry.get('inventory_sha256')==recipe and entry.get('run_dir'):
-            run=Path(entry['run_dir'])
-            if (run/'release.json').is_file() and (run/'drawing.pdf').is_file():
-                release=json.loads((run/'release.json').read_text())
-                if (release.get('inventory_sha256')==recipe
-                        and release.get('output_sha256')==digest(run/'drawing.pdf')):
-                    entry['status']='RELEASE_READY';return manifest,cfg,recipe,entry,True
-            if entry.get('status') in {'AUTO_QA_FAIL','PREFLIGHT_FAIL'} and args.allow_retry:
-                return manifest,cfg,recipe,entry,False
-            elif entry.get('status') in {'AUTO_QA_FAIL','PREFLIGHT_FAIL','AUTO_QA_PASS','DRAFT_QA_PASS'}:
-                return manifest,cfg,recipe,entry,True
-        return manifest,cfg,recipe,entry,False
+def _control_path(args):
+    require(args.control_root, 'A stable project --control-root is required for draft/build/batch')
+    root=Path(args.control_root).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
-    pilots=[job for job in spec['jobs'] if job.get('pilot')]
-    regular=[job for job in spec['jobs'] if not job.get('pilot')]
-    ordered=pilots+regular
-    pilot_blocked=False
-    for job in ordered:
-        manifest,cfg,recipe,previous,unchanged=current(job)
-        if job in regular and pilots:
-            required_status='DRAFT_QA_PASS' if args.mode=='draft' else 'RELEASE_READY'
-            ready=all(state['jobs'].get(p['id'],{}).get('status')==required_status for p in pilots)
-            if not ready:
-                state['jobs'][job['id']]={'status':'BLOCKED_PILOT_GATE','manifest':str(manifest),
-                    'inventory_sha256':recipe,'message':'All pilot outputs need independent verify/release before expansion.'}
-                pilot_blocked=True;persist();continue
-        if unchanged:
-            continue
-        attempts=int(previous.get('attempts',0)) if previous else 0
-        if attempts>=int(args.max_attempts) and not args.allow_retry:
-            state['jobs'][job['id']]={'status':'NEEDS_REVIEW_RETRY_LIMIT','manifest':str(manifest),
-                'inventory_sha256':recipe,'attempts':attempts,
-                'message':'Retry limit reached; stop for review or rerun only with explicit --allow-retry.'}
-            persist();continue
-        run=root/job['id']/(f'{recipe[:16]}-a{attempts+1}' if args.mode=='build' else f'draft-a{attempts+1}')
+
+@contextlib.contextmanager
+def _locked_state(root):
+    lock=(root/'batch-state.lock').open('a+')
+    try:
+        deadline=time.monotonic()+10
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                require(time.monotonic()<deadline,
+                        'Project control ledger lock timed out; inspect the writer')
+                time.sleep(.02)
+        path=root/'batch-state.json'
+        if path.exists():
+            state=json.loads(path.read_text())
+            require(state.get('schema_version')==CONTROL_SCHEMA,
+                    'Legacy/unknown batch-state.json: migration is not supported; preserve it and stop')
+            require(isinstance(state.get('runs'),dict) and isinstance(state.get('jobs'),dict)
+                    and isinstance(state.get('events'),list), 'Control ledger structure is invalid')
+        else:
+            state={'schema_version':CONTROL_SCHEMA,'runs':{},'jobs':{},'events':[]}
+        yield state
+    finally:
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        lock.close()
+
+
+def _persist_state(root,state):
+    state['updated_at_epoch']=int(time.time())
+    path=root/'batch-state.json'
+    temp=path.with_suffix('.tmp')
+    save_json(temp,state)
+    temp.replace(path)
+
+
+def _entry(state,record_id,stage,entry):
+    state['jobs'].setdefault(record_id,{})[stage]=entry
+
+
+def _identity(cfg,record_id=None):
+    ident=cfg.get('identity',{})
+    value=ident.get('record_id')
+    require(isinstance(value,str) and re.fullmatch(r'[A-Za-z0-9._-]+',value),
+            'Verified identity.record_id is required')
+    require(record_id is None or value==record_id,'Batch id and manifest identity.record_id differ')
+    sha=cfg.get('source',{}).get('sha256')
+    require(isinstance(sha,str) and re.fullmatch(r'[0-9a-f]{64}',sha),
+            'Verified source SHA256 is required')
+    return value,sha
+
+
+def _success_valid(success,recipe,stage):
+    if not success or success.get('inventory_sha256')!=recipe:
+        return False
+    out=Path(success.get('run_dir',''))
+    try:
+        if any(not (out/name).is_file() for name in ARTIFACTS[stage]):
+            return False
+        if any(digest(out/name)!=success.get('files',{}).get(name) for name in ARTIFACTS[stage]):
+            return False
+        if digest(out/ARTIFACTS[stage][0])!=success.get('artifact_sha256'):
+            return False
+        audit=json.loads((out/ARTIFACTS[stage][1]).read_text())
+        if audit.get('pass') is not True or digest(out/ARTIFACTS[stage][1])!=success.get('audit_sha256'):
+            return False
+        if stage=='build':
+            run=json.loads((out/'run.json').read_text())
+            if run.get('inventory_sha256')!=recipe or run.get('output_sha256')!=success['artifact_sha256']:
+                return False
+    except (OSError,ValueError,KeyError):
+        return False
+    return True
+
+
+def _release_ready(success):
+    out=Path(success['run_dir'])
+    try:
+        release=json.loads((out/'release.json').read_text())
+        review=json.loads((out/'review.snapshot.json').read_text())
+        return (release.get('release_ready') is True
+                and release.get('inventory_sha256')==success['inventory_sha256']
+                and release.get('output_sha256')==success['artifact_sha256']
+                and all((out/name).is_file() for name in ('verify.json','review.snapshot.json'))
+                and release.get('verify_sha256')==digest(out/'verify.json')
+                and review.get('verdict')=='PASS'
+                and review.get('inventory_sha256')==success['inventory_sha256']
+                and review.get('output_sha256')==success['artifact_sha256']
+                and json.loads((out/'verify.json').read_text()).get('pass') is True)
+    except (OSError,ValueError,KeyError):
+        return False
+
+
+def _result(record_id,stage,status,attempts,evidence,seconds=0,error_category=None):
+    return {'product_id':record_id,'stage':stage,'status':status,'seconds':round(seconds,3),
+            'attempts':attempts,'error_category':error_category,'evidence_path':str(evidence)}
+
+
+def _run_stage(args,stage,record_id=None,output_for_attempt=None):
+    root=_control_path(args)
+    manifest=Path(args.manifest).resolve()
+    # Validate identity and source bytes before opening the ledger or starting expensive PDF work.
+    cfg=json.loads(manifest.read_text())
+    record_id,source_sha=_identity(cfg,record_id)
+    source=resolve(manifest.parent,cfg['source']['path'])
+    require(source.is_file(),'Source PDF missing')
+    require(digest(source)==source_sha,'Source hash changed; inspect again')
+    # Manifest/source-review errors are cheap preflight failures, not generation attempts.
+    checked_cfg,*_=read_manifest(manifest,check_review=(stage=='build'))
+    recipe=inventory_hash(checked_cfg)
+    key=f'{record_id}|{source_sha}|{stage}'
+    with _locked_state(root) as state:
+        history=state['runs'].setdefault(key,{'attempts':0,'last_recipe':None,'successes':{}})
+        attempts=history['attempts']
+        success=history['successes'].get(recipe)
+        if _success_valid(success,recipe,stage):
+            status='RELEASE_READY' if stage=='build' and _release_ready(success) else (
+                'AUTO_QA_PASS' if stage=='build' else 'DRAFT_QA_PASS')
+            entry={'status':status,'attempts':attempts,'inventory_sha256':recipe,'run_dir':success['run_dir']}
+            _entry(state,record_id,stage,entry);_persist_state(root,state)
+            return _result(record_id,stage,'REUSED_'+status,attempts,success['run_dir'])
+        if history.get('last_status')=='RUNNING':
+            pid=history.get('running_pid')
+            try:
+                if pid:os.kill(pid,0)
+                alive=bool(pid)
+            except ProcessLookupError:
+                alive=False
+            if alive:
+                return _result(record_id,stage,'IN_PROGRESS',attempts,
+                               history.get('last_run_dir',root/'batch-state.json'))
+            # A terminated writer consumed its reserved attempt.  The next
+            # attempt remains subject to the same two-attempt ceiling.
+            history['last_status']='INTERRUPTED'
+            state['events'].append({'record_id':record_id,'source_sha256':source_sha,
+                'stage':stage,'attempt':attempts,'status':'INTERRUPTED','epoch':int(time.time())})
+            _persist_state(root,state)
+        if history.get('last_recipe')==recipe and history.get('last_status') in {'AUTO_QA_FAIL','PREFLIGHT_FAIL'} and not args.allow_retry:
+            return _result(record_id,stage,'UNCHANGED_FAILURE',attempts,history.get('last_run_dir',root),
+                           error_category=history.get('last_error_category'))
+        if attempts>=2:
+            entry={'status':'NEEDS_REVIEW_RETRY_LIMIT','attempts':attempts,'inventory_sha256':recipe}
+            _entry(state,record_id,stage,entry);_persist_state(root,state)
+            return _result(record_id,stage,'NEEDS_REVIEW_RETRY_LIMIT',attempts,root/'batch-state.json')
+        run=Path(output_for_attempt(attempts+1,recipe) if output_for_attempt else args.output).resolve()
+        if stage=='build':
+            prior=ARTIFACTS['build']+('candidate.pdf','release.json','verify.json',
+                'review.snapshot.json','manifest.snapshot.json')
+            require(not any((run/name).exists() for name in prior),
+                    'Build output contains prior artifacts; choose a new directory')
         run.mkdir(parents=True,exist_ok=True)
-        entry={'status':'RUNNING','manifest':str(manifest),'inventory_sha256':recipe,
-               'source_inventory_sha256':source_inventory_hash(cfg),'attempts':attempts+1,'run_dir':str(run)}
-        state['jobs'][job['id']]=entry;persist()
-        ns=argparse.Namespace(manifest=str(manifest),output=str(run),cache=str(cache))
+        token=uuid.uuid4().hex
+        # Reserve under the project lock, then release it for expensive PDF/QA.
+        history.update(attempts=attempts+1,last_recipe=recipe,last_run_dir=str(run),
+                       last_status='RUNNING',running_pid=os.getpid(),running_token=token)
+        _entry(state,record_id,stage,{'status':'RUNNING','attempts':attempts+1,
+                'inventory_sha256':recipe,'run_dir':str(run)})
+        state['events'].append({'record_id':record_id,'source_sha256':source_sha,'stage':stage,
+            'attempt':attempts+1,'status':'RUNNING','inventory_sha256':recipe,'epoch':int(time.time())})
+        _persist_state(root,state)
+
+    log=run/f'{stage}-generation-a{attempts+1}.log'
+    start=time.perf_counter()
+    success_data=None
+    try:
+        ns=argparse.Namespace(manifest=str(manifest),output=str(run),cache=args.cache)
+        with log.open('w') as stream,contextlib.redirect_stdout(stream),contextlib.redirect_stderr(stream):
+            (_build_generate if stage=='build' else _draft_generate)(ns)
+        artifact=run/ARTIFACTS[stage][0]
+        audit=run/ARTIFACTS[stage][1]
+        require(artifact.is_file() and audit.is_file(),'Generation artifacts incomplete')
+        status='AUTO_QA_PASS' if stage=='build' else 'DRAFT_QA_PASS'
+        success_data={'inventory_sha256':recipe,'run_dir':str(run),
+            'artifact_sha256':digest(artifact),'audit_sha256':digest(audit),
+            'files':{name:digest(run/name) for name in ARTIFACTS[stage]}}
+        error=None
+    except Exception as exc:
+        with log.open('a') as stream:
+            stream.write('\n'+traceback.format_exc())
+        status='AUTO_QA_FAIL' if (run/ARTIFACTS[stage][1]).exists() else 'PREFLIGHT_FAIL'
+        error=type(exc).__name__
+        error_message=str(exc)
+    elapsed=time.perf_counter()-start
+    with _locked_state(root) as state:
+        history=state['runs'][key]
+        require(history.get('running_token')==token and history.get('last_status')=='RUNNING',
+                'Run reservation changed during generation; inspect project ledger')
+        if success_data is not None:history['successes'][recipe]=success_data
+        history['last_status']=status;history['last_error_category']=error
+        history.pop('running_pid',None);history.pop('running_token',None)
+        entry={'status':status,'attempts':attempts+1,'inventory_sha256':recipe,'run_dir':str(run),
+               'seconds':round(elapsed,3),'error_category':error}
+        _entry(state,record_id,stage,entry)
+        state['events'].append({'record_id':record_id,'source_sha256':source_sha,'stage':stage,
+            'attempt':attempts+1,'status':status,'inventory_sha256':recipe,'epoch':int(time.time()),
+            'evidence_path':str(log),'error_category':error})
+        _persist_state(root,state)
+    result=_result(record_id,stage,status,attempts+1,log,elapsed,error)
+    if error:result['_error_message']=error_message
+    return result
+
+
+def draft(args):
+    result=_run_stage(args,'draft')
+    message=result.pop('_error_message',None)
+    print(json.dumps(result,ensure_ascii=False))
+    if message:print('STOP: '+message,file=sys.stderr)
+    return result
+
+
+def build(args):
+    result=_run_stage(args,'build')
+    message=result.pop('_error_message',None)
+    print(json.dumps(result,ensure_ascii=False))
+    if message:print('STOP: '+message,file=sys.stderr)
+    return result
+
+
+def reset_attempts(args):
+    """Explicit, audited administrative reset; never invoked by generation."""
+    root=_control_path(args)
+    require(len(args.reason.strip())>=12,'Reset reason needs at least 12 characters')
+    require(args.operator.strip(),'Reset operator is required')
+    require(re.fullmatch(r'[A-Za-z0-9._-]+',args.record_id),'Invalid record ID')
+    require(re.fullmatch(r'[0-9a-f]{64}',args.source_sha256),'Invalid source SHA256')
+    key=f'{args.record_id}|{args.source_sha256}|{args.stage}'
+    with _locked_state(root) as state:
+        require(key in state['runs'],'No matching attempt history to reset')
+        before=state['runs'][key].copy()
+        state['events'].append({'status':'MANUAL_RESET','record_id':args.record_id,
+            'source_sha256':args.source_sha256,'stage':args.stage,'operator':args.operator,
+            'reason':args.reason,'previous':before,'epoch':int(time.time())})
+        state['runs'][key]={'attempts':0,'last_recipe':None,'successes':{},'last_status':'MANUAL_RESET'}
+        _persist_state(root,state)
+    print(json.dumps({'product_id':args.record_id,'stage':args.stage,'status':'MANUAL_RESET',
+        'attempts':0,'evidence_path':str(root/'batch-state.json')},ensure_ascii=False))
+
+
+def batch(args):
+    """Use the same project ledger and generation limits as direct entry points."""
+    spec_path=Path(args.jobs).resolve();spec=json.loads(spec_path.read_text())
+    if 'products' in spec:
+        from stable_batch import run_products
+        return run_products(args,spec,spec_path)
+    require(isinstance(spec.get('jobs'),list) and spec['jobs'],'Batch file needs a non-empty jobs list')
+    require(args.max_attempts==2,'The generation ceiling is fixed at two; --max-attempts cannot override it')
+    root=Path(args.output_root).resolve();root.mkdir(parents=True,exist_ok=True)
+    control=_control_path(args)
+    with _locked_state(control):pass  # Reject legacy ledger before any batch work.
+    ids=[str(job.get('id','')) for job in spec['jobs']]
+    require(all(re.fullmatch(r'[A-Za-z0-9._-]+',x) for x in ids),'Batch ids must be filesystem-safe')
+    require(len(ids)==len(set(ids)),'Batch ids must be unique')
+    pilots=[j for j in spec['jobs'] if j.get('pilot')]
+    require(pilots,'Batch needs at least one pilot; expansion cannot bypass the pilot gate')
+    ordered=pilots+[j for j in spec['jobs'] if not j.get('pilot')]
+    results=[]
+    for job in ordered:
+        manifest=resolve(spec_path.parent,job['manifest'])
+        ns=argparse.Namespace(manifest=str(manifest),output=None,cache=args.cache,
+                              control_root=args.control_root,allow_retry=args.allow_retry)
+        if job not in pilots and pilots:
+            with _locked_state(control) as state:
+                needed='DRAFT_QA_PASS' if args.mode=='draft' else 'RELEASE_READY'
+                ready=all(state['jobs'].get(p['id'],{}).get(args.mode,{}).get('status')==needed for p in pilots)
+                if not ready:
+                    _entry(state,job['id'],args.mode,{'status':'BLOCKED_PILOT_GATE'})
+                    _persist_state(control,state)
+            if not ready:
+                results.append(_result(job['id'],args.mode,'BLOCKED_PILOT_GATE',0,control/'batch-state.json'))
+                continue
         try:
-            (build if args.mode=='build' else draft)(ns)
-            entry['status']='AUTO_QA_PASS' if args.mode=='build' else 'DRAFT_QA_PASS'
-            artifact=run/('drawing.pdf' if args.mode=='build' else 'draft.pdf')
-            entry['output_sha256']=digest(artifact);entry['artifact']=str(artifact)
-        except (ValueError,KeyError,FileNotFoundError) as exc:
-            entry['status']='AUTO_QA_FAIL' if (run/('audit.json' if args.mode=='build' else 'draft-audit.json')).exists() else 'PREFLIGHT_FAIL'
-            entry['message']=str(exc)
-        state['events'].append({'job_id':job['id'],'status':entry['status'],'inventory_sha256':recipe,
-                                'epoch':int(time.time())})
-        state['events']=state['events'][-200:];persist()
-    persist()
-    summary={'state':str(state_path),'mode':args.mode,
-             'counts':{status:sum(1 for value in state['jobs'].values() if value.get('status')==status)
-                       for status in sorted({v.get('status') for v in state['jobs'].values()})},
-             'pilot_gate_blocked':pilot_blocked}
-    save_json(root/'job-summary.json',summary);print(json.dumps(summary,ensure_ascii=False))
+            result=_run_stage(ns,args.mode,job['id'],
+                lambda n,recipe:root/job['id']/f'{recipe[:16]}-{args.mode}-a{n}')
+        except Exception as exc:
+            # Identity/source errors are preflight failures, not attempts.
+            result=_result(job['id'],args.mode,'PREFLIGHT_FAIL',0,control/'batch-state.json',
+                           error_category=type(exc).__name__)
+            with _locked_state(control) as state:
+                _entry(state,job['id'],args.mode,{'status':'PREFLIGHT_FAIL','attempts':0,
+                    'error_category':type(exc).__name__,'message':str(exc)})
+                state['events'].append({'record_id':job['id'],'stage':args.mode,'status':'PREFLIGHT_FAIL',
+                    'message':str(exc),'epoch':int(time.time())})
+                _persist_state(control,state)
+        result.pop('_error_message',None)
+        results.append(result)
+        print(json.dumps(result,ensure_ascii=False))
+    save_json(root/'job-summary.json',{'results':results,'state':str(control/'batch-state.json')})
 
 
 def verify(args):
@@ -1031,6 +1548,47 @@ def verify(args):
                       'release_ready':audit['visual_review_pass']},ensure_ascii=False))
 
 
+def recheck_candidate(args):
+    """Audit an existing draft with current rules, without a generation attempt."""
+    started=time.perf_counter()
+    cfg,mp,source,assets=read_manifest(args.manifest,check_review=False)
+    output=Path(args.pdf).resolve();require(output.is_file(),'Candidate PDF missing')
+    report=Path(args.report).resolve()
+    recipe=inventory_hash(cfg);output_sha=digest(output)
+    if report.is_file():
+        old=json.loads(report.read_text())
+        if (old.get('recipe_sha256')==recipe and old.get('output_sha256')==output_sha
+                and old.get('engine_sha256')==digest(__file__)
+                and old.get('frame_sha256')==digest(Path(__file__).with_name('frame.py'))
+                and old.get('automatic_pass') is True):
+            print(json.dumps({'product_id':cfg['identity']['record_id'],'stage':'candidate-recheck',
+                'status':'REUSED_AUTO_QA_PASS_REVIEW_REQUIRED','seconds':round(time.perf_counter()-started,3),
+                'evidence_path':str(report)},ensure_ascii=False))
+            return
+    cache=args.cache or output.parent/'.cache'
+    neutral,colored,_,_=cached_source(cfg,source,cache)
+    source_pixels,_=cached_render(neutral,cache)
+    with fitz.open(neutral) as doc:
+        ps,source_quality=check_geometry(cfg,doc[0],source_pixels)
+    expected_doc,_=compose_document(cfg,colored,assets,ps)
+    try:
+        audit=make_audit(cfg,neutral,colored,output,ps,assets,source_pixels,
+                         render_array(expected_doc[0]),source_quality)
+    finally:expected_doc.close()
+    value={'product_id':cfg['identity']['record_id'],'stage':'candidate-recheck',
+        'automatic_pass':audit['pass'],'independent_source_review':'REQUIRED',
+        'independent_final_review':'REQUIRED','recipe_sha256':recipe,
+        'engine_sha256':digest(__file__),'frame_sha256':digest(Path(__file__).with_name('frame.py')),
+        'source_sha256':digest(source),'output_sha256':output_sha,
+        'manifest_sha256':digest(mp),'check_seconds':round(time.perf_counter()-started,3),
+        'audit':audit}
+    save_json(report,value)
+    print(json.dumps({'product_id':value['product_id'],'stage':value['stage'],
+        'status':'AUTO_QA_PASS_REVIEW_REQUIRED' if audit['pass'] else 'AUTO_QA_FAIL',
+        'seconds':value['check_seconds'],'evidence_path':str(report)},ensure_ascii=False))
+    require(audit['pass'],'Candidate recheck failed')
+
+
 def write_source_map(doc,page,stem):
     """One compact coordinate/index pack replaces repeated ad-hoc screenshots."""
     blocks=[]
@@ -1078,7 +1636,7 @@ def init(args):
     root=Path(__file__).resolve().parents[1]
     cfg={'schema_version':2,'source':{'path':str(source),'sha256':digest(source),'page':1,
         'rotation':args.rotation,'expected_pages':len(doc)},'renderer':'auto',
-        'identity':{'expected_model':args.model,'observed_model':'','model_evidence':'','observed_parts':[],
+        'identity':{'record_id':'','expected_model':args.model,'observed_model':'','model_evidence':'','observed_parts':[],
                     'part_pattern':''},
         'fields':{'model':args.model,'title':'','scale_text':'','unit':'','sheet':'','tolerances':[],
                   'no_tolerance_block_reason':''},
@@ -1100,16 +1658,22 @@ def main():
     from approved_recipe import register_cli
     register_cli(subs)
     p=subs.add_parser('init');p.add_argument('source');p.add_argument('--manifest',required=True);p.add_argument('--model',required=True);p.add_argument('--rotation',type=int,choices=[0,90,180,270],required=True);p.set_defaults(func=init)
-    p=subs.add_parser('draft');p.add_argument('manifest');p.add_argument('--output',required=True);p.add_argument('--cache');p.set_defaults(func=draft)
-    p=subs.add_parser('build');p.add_argument('manifest');p.add_argument('--output',required=True);p.add_argument('--cache');p.set_defaults(func=build)
-    p=subs.add_parser('batch');p.add_argument('jobs');p.add_argument('--output-root',required=True);p.add_argument('--cache');p.add_argument('--mode',choices=['draft','build'],default='build');p.add_argument('--max-attempts',type=int,default=2);p.add_argument('--allow-retry',action='store_true');p.set_defaults(func=batch)
+    p=subs.add_parser('draft');p.add_argument('manifest');p.add_argument('--output',required=True);p.add_argument('--cache');p.add_argument('--control-root',required=True);p.add_argument('--allow-retry',action='store_true');p.set_defaults(func=draft)
+    p=subs.add_parser('build');p.add_argument('manifest');p.add_argument('--output',required=True);p.add_argument('--cache');p.add_argument('--control-root',required=True);p.add_argument('--allow-retry',action='store_true');p.set_defaults(func=build)
+    p=subs.add_parser('batch');p.add_argument('jobs');p.add_argument('--output-root',required=True);p.add_argument('--control-root',required=True);p.add_argument('--cache');p.add_argument('--mode',choices=['draft','build'],default='build');p.add_argument('--max-attempts',type=int,default=2);p.add_argument('--allow-retry',action='store_true');p.add_argument('--golden-ledger');p.add_argument('--catalog-dir');p.add_argument('--workers',type=int,default=1);p.add_argument('--runtime-126',help='Pinned Python with PyMuPDF 1.26.5 for exact legacy visual replay');p.set_defaults(func=batch)
+    p=subs.add_parser('reset-attempts');p.add_argument('--control-root',required=True);p.add_argument('--record-id',required=True);p.add_argument('--source-sha256',required=True);p.add_argument('--stage',choices=['draft','build'],required=True);p.add_argument('--operator',required=True);p.add_argument('--reason',required=True);p.set_defaults(func=reset_attempts)
     p=subs.add_parser('verify');p.add_argument('manifest');p.add_argument('pdf');p.add_argument('--cache');p.add_argument('--review');p.add_argument('--report');p.set_defaults(func=verify)
+    p=subs.add_parser('recheck-candidate');p.add_argument('manifest');p.add_argument('pdf');p.add_argument('--cache');p.add_argument('--report',required=True);p.set_defaults(func=recheck_candidate)
     p=subs.add_parser('inventory-hash');p.add_argument('manifest');p.set_defaults(func=lambda a: print(inventory_hash(json.loads(Path(a.manifest).read_text()))))
     p=subs.add_parser('hashes');p.add_argument('manifest');p.set_defaults(func=lambda a: print(json.dumps({
         'source_inventory_sha256':source_inventory_hash(json.loads(Path(a.manifest).read_text())),
         'inventory_sha256':inventory_hash(json.loads(Path(a.manifest).read_text()))},ensure_ascii=False)))
     args=parser.parse_args()
-    try:args.func(args)
+    try:
+        result=args.func(args)
+        if isinstance(result,dict) and result.get('status') in {
+                'PREFLIGHT_FAIL','AUTO_QA_FAIL','NEEDS_REVIEW_RETRY_LIMIT','UNCHANGED_FAILURE'}:
+            return 2
     except (ValueError,KeyError,FileNotFoundError) as exc:
         print('STOP: '+str(exc),file=sys.stderr);return 2
     return 0
