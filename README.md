@@ -1,10 +1,18 @@
 # kangsheng-tuzhi-moban
 
-把**单页**供应链连接器工程 PDF 按人工核定的内容清单重排为康生品牌图纸，并输出自动 QA、审核图和可追溯凭证。
+把**单页**供应链连接器工程 PDF 制作为康生品牌图纸：同一原件按冻结的认可配方精确复现，新原件按人工核定的清单重排，并保留完整工程 QA 与独立发布门禁。
 
-本工具不是任意图纸的自动理解/自动排版器：首次分组、裁切边界、排除区和布局仍需对照完整原件确定。同型号供应链原件是技术真源；用户明确认可的第 14–18 行只作品牌与版式参考，失败草稿只作问题对照。不要跨型号复用裁切坐标、技术值或 PASS 结论。新任务使用 Manifest v2，Schema v1 仅兼容既有清单。
+**已登记 SHA256 的原件无需模型再次排版。** 新型号、未知 SHA256 或不同内容的源文件仍需对照完整原件确认分组、裁切边界、排除区和布局，禁止套用其他图纸的裁切坐标。同型号原件是技术真源；用户明确认可的成品只提供品牌与版式依据，失败草稿不是样板。
 
-## 快速开始
+| 场景 | 正式入口 | 通过后意味着什么 |
+|---|---|---|
+| 同一原件重做认可视觉 | `replay` / `replay-batch` | 精确复现已冻结的认可配方，不是工程发布审核 |
+| 认可成品尚未冻结 | `freeze-approved` | 计划重放与认可基线整页渲染一致，生成绑定凭证 |
+| 新型号、未知 SHA256、工程发布 | v2 `init` → `draft` → `build` → `verify` | 独立审核及全部门禁通过后生成 `release.json` |
+
+唯一生产 CLI 是 `scripts/kangsheng.py`，不再依赖历史会话中的一次性脚本。
+
+## 安装
 
 Python 3.10+：
 
@@ -12,7 +20,29 @@ Python 3.10+：
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
+```
 
+## 已认可原件：冻结一次，直接复现
+
+```sh
+python scripts/kangsheng.py freeze-approved PLAN.json \
+  --baseline APPROVED.pdf --output RECIPE.json --approval-note '用户明确认可'
+python scripts/kangsheng.py replay RECIPE.json --output WORK/replay
+python scripts/kangsheng.py replay-batch --registry REGISTRY.json \
+  --sources SOURCE_A.pdf SOURCE_B.pdf --output-root WORK/replay-batch
+```
+
+`freeze-approved` 绑定原件、配方、品牌资产、引擎、PyMuPDF/fitz 版本和整页认可基线渲染哈希；`replay` 按已冻结操作运行并核验，不调用模型重新裁切或排版。只有精确匹配原件 SHA256 的登记项才可重放；未知原件转入源审与建配方流程，不按文件名或外观猜匹配。
+
+成功状态为 **`APPROVED_VISUAL_REPLAY_VERIFIED`**，始终标记 **`engineering_release=false`**，不产生 `release.json`。用户的视觉认可不替代源清单审核、独立终审或现有工程发布规则。完整契约见 [认可配方冻结与重放](references/approved-replay.md)。
+
+颜色策略随配方冻结：`cyan-gold-v1` 将原图青色针脚转为金色，其余非白色内容转为蓝色；`legacy-v1` 保留旧行为，不全局改动旧稿。公差表保留原矢量单元格和闭合网格并贴齐底部，投影符号在专用格居中。
+
+## 新原件：v2 工程制作
+
+新任务使用 Manifest v2，Schema v1 仅兼容既有清单。
+
+```sh
 python scripts/kangsheng.py init INPUT.pdf \
   --manifest JOB.json --model '原图完整型号' --rotation 270
 ```
@@ -48,7 +78,7 @@ python scripts/kangsheng.py verify JOB.json WORK/run-001/drawing.pdf \
 
 只有 `verify` 生成 `release.json` 才可发布。省略 `--review` 只会重跑自动门禁，`release_ready` 为 false。
 
-## 构建产物
+## v2 工程构建产物
 
 | 产物 | 用途 |
 |---|---|
@@ -77,7 +107,7 @@ python scripts/kangsheng.py verify JOB.json WORK/run-001/drawing.pdf \
 
 `inventory-hash` 保留为只输出完整配方哈希的兼容命令；新流程优先用 `hashes` 同时取得两者。
 
-## 小批量
+## v2 工程小批量
 
 ```sh
 python scripts/kangsheng.py batch JOBS.json \
@@ -86,6 +116,12 @@ python scripts/kangsheng.py batch JOBS.json \
 
 批次使用一个 `batch-state.json` 账本和一个 `job-summary.json` 汇总；先导项全部生成并独立 `verify` 出 `release.json` 后，重跑 `batch` 才会放行普通项。详见 [批量执行与接力](references/batch-handoff.md)。本包不含飞书上传实现；发布规则见 [references/publishing.md](references/publishing.md)。
 
+## 跨窗口接力与耗时口径
+
+优先读取项目 `handoff/认可版快速接力.md` 及本机 `~/.local/share/kangsheng-tuzhi/registry.json`，凭源 SHA256 找认可配方，不从历史聊天重新猜布局。该注册表是本地私有工作状态，不是要提交到公开仓库的配置。
+
+同一原件直接重放；未知版式需要源审与建配方时间。报告时间时分别说明渲染、自动核验、人工/代理审阅，不把整套审计耗时写成 PDF 渲染耗时。
+
 ## 数据边界
 
-仓库只包含程序、品牌资产、规范和合成测试。供应链原件、客户型号表、成品、业务记录 ID、令牌、日志和逐行账本均保留在私有任务目录。
+仓库只包含程序、品牌资产、规范和合成测试，公开示例只用占位符。供应链原件、客户型号表、成品、私有配方及注册表、业务记录 ID、令牌、日志、绝对私有路径和逐行账本均保留在私有任务目录。

@@ -16,7 +16,8 @@ from scipy.ndimage import affine_transform, binary_dilation, label, find_objects
 from frame import (BLUE, PAGE, FRAME, TITLE_BOX, TOLERANCE_BOX, PROJECTION_BOX,
                    draw_frame_and_title)
 
-VERSION = '2.0.0'
+VERSION = '2.1.0'
+COLOR_PROFILES = {'legacy-v1', 'cyan-gold-v1'}
 S = 4
 EDGE = 2  # 0.5 PDF point at 4x rendering, renderer boundary antialiasing only.
 DILATE = 2
@@ -155,6 +156,7 @@ def read_manifest(path,check_review=True):
     path=Path(path).resolve(); cfg=json.loads(path.read_text())
     schema=cfg.get('schema_version')
     require(schema in {1,2},'schema_version must equal 1 or 2')
+    require(cfg.get('color_profile','legacy-v1') in COLOR_PROFILES,'Unknown color profile')
     source=resolve(path.parent,cfg['source']['path'])
     require(source.is_file(),'Source PDF missing')
     require(digest(source)==cfg['source']['sha256'],'Source hash changed; inspect again')
@@ -303,24 +305,29 @@ def read_manifest(path,check_review=True):
     return cfg,path,source,assets
 
 
-def classify_color(rgb):
+def classify_color(rgb,profile='legacy-v1'):
+    require(profile in COLOR_PROFILES,'Unknown color profile')
     r,g,b=rgb
     if min(rgb)>=.96: return rgb
+    if profile=='cyan-gold-v1':
+        # Approved contact-pin highlights only. Do not turn red dimensions gold.
+        if g>.6 and b>.6 and r<.4:return (217/255,154/255,0)
+        return BLUE
     if max(rgb)-min(rgb)<.10 or (b>r+.08 and b>=g): return BLUE
     return (217/255,154/255,0)
 
 
-def svg_recolor(svg):
+def svg_recolor(svg,profile='legacy-v1'):
     def color(m):
         raw=m.group()[1:]
         if len(raw)==3:raw=''.join(c*2 for c in raw)
         rgb=tuple(int(raw[i:i+2],16)/255 for i in [0,2,4])
-        return '#'+''.join(f'{round(v*255):02x}' for v in classify_color(rgb))
+        return '#'+''.join(f'{round(v*255):02x}' for v in classify_color(rgb,profile))
     svg=re.sub(r'#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b',color,svg)
     return svg.replace('<svg ',f'<svg fill="{HEX_BLUE}" ',1)
 
 
-def native_recolor(source,target):
+def native_recolor(source,target,profile='legacy-v1'):
     # A PDF parser, not regex replacement: preserves all text/font and geometry operators.
     import pikepdf
     pdf=pikepdf.open(source);seen=set()
@@ -338,7 +345,7 @@ def native_recolor(source,target):
                 elif op in {'k','K'}:
                     c,m,y,k=nums;rgb=(1-min(1,c+k),1-min(1,m+k),1-min(1,y+k))
                 else: rgb=nums
-                instructions.append((list(classify_color(rgb)),pikepdf.Operator('RG' if op.isupper() else 'rg')))
+                instructions.append((list(classify_color(rgb,profile)),pikepdf.Operator('RG' if op.isupper() else 'rg')))
             else: instructions.append(inst)
         data=pikepdf.unparse_content_stream(instructions)
         if isinstance(obj,pikepdf.Page): obj.Contents=pdf.make_stream(data)
@@ -351,6 +358,8 @@ def native_recolor(source,target):
 
 
 def cached_source(cfg,source,cache):
+    profile=cfg.get('color_profile','legacy-v1')
+    require(profile in COLOR_PROFILES,'Unknown color profile')
     original=fitz.open(source)
     require(len(original)==cfg['source']['expected_pages'],'Page count changed; review all pages')
     require(len(original)==1,'This single-sheet command requires a reviewed one-page PDF; never silently drops pages')
@@ -358,7 +367,8 @@ def cached_source(cfg,source,cache):
     cache=Path(cache);cache.mkdir(parents=True,exist_ok=True)
     key=hashlib.sha256(canonical({'sha':digest(source),'page':cfg['source']['page'],
           'rotation':cfg['source']['rotation'],'version':VERSION,'engine':digest(__file__),
-          'fitz':fitz.__version__,'renderer':cfg.get('renderer','auto')})).hexdigest()[:24]
+          'fitz':fitz.__version__,'renderer':cfg.get('renderer','auto'),
+          'color_profile':profile})).hexdigest()[:24]
     neutral=cache/(key+'-source.pdf');colored=cache/(key+'-blue.pdf');info=cache/(key+'.json')
     if neutral.exists() and colored.exists() and info.exists():
         old=json.loads(info.read_text())
@@ -372,12 +382,12 @@ def cached_source(cfg,source,cache):
     used='native'
     try:
         if renderer=='svg':raise RuntimeError('Explicit SVG path renderer')
-        native_recolor(neutral,colored)
+        native_recolor(neutral,colored,profile)
     except (ImportError,ValueError,RuntimeError):
         if renderer=='native':raise
         used='svg'
         doc=fitz.open(neutral)
-        svg=svg_recolor(doc[0].get_svg_image(text_as_path=True))
+        svg=svg_recolor(doc[0].get_svg_image(text_as_path=True),profile)
         vec=fitz.open('svg',svg.encode());converted=fitz.open('pdf',vec.convert_to_pdf())
         converted.save(colored,garbage=4,deflate=True)
     info.write_text(json.dumps({'renderer':used,'neutral_sha256':digest(neutral),
@@ -1087,6 +1097,8 @@ def init(args):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     subs=parser.add_subparsers(dest='command',required=True)
+    from approved_recipe import register_cli
+    register_cli(subs)
     p=subs.add_parser('init');p.add_argument('source');p.add_argument('--manifest',required=True);p.add_argument('--model',required=True);p.add_argument('--rotation',type=int,choices=[0,90,180,270],required=True);p.set_defaults(func=init)
     p=subs.add_parser('draft');p.add_argument('manifest');p.add_argument('--output',required=True);p.add_argument('--cache');p.set_defaults(func=draft)
     p=subs.add_parser('build');p.add_argument('manifest');p.add_argument('--output',required=True);p.add_argument('--cache');p.set_defaults(func=build)
