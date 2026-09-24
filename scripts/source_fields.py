@@ -77,6 +77,22 @@ def load_source_fields(cfg, manifest_path):
         page = doc[0]; page.set_rotation(e['rotation']); page.remove_rotation()
         for name, region in e['regions'].items():
             require(crop_hash(page, region['box']) == region['raster_sha256'], name + ' source fingerprint changed')
+        # Precise technical title cells are replacements, never furniture.
+        # Optional for historical recipes; new ledgers can account for them
+        # without excluding the entire original title block.
+        field_regions=e.get('field_regions', {})
+        require(isinstance(field_regions, dict), 'field_regions must be an object')
+        for name, region in field_regions.items():
+            require(name in {'model','title','unit','sheet','scale_text','size'}, 'unknown replacement field')
+            require(name in e['fields'] and name in row, 'replacement field lacks reviewed value')
+            require(e['fields'][name] == row[name] == cfg['fields'][name], name + ' replacement value differs')
+            require(row.get('field_regions', {}).get(name) == region, name + ' source region not independently reviewed')
+            require(crop_hash(page, region['box']) == region['raster_sha256'], name + ' replacement fingerprint changed')
+            r=fitz.Rect(region['box'])
+            require(all((r & fitz.Rect(ex['box'])).is_empty for ex in cfg.get('coverage',{}).get('exclude',[])),
+                    name + ' technical field overlaps nontechnical exclusion')
+            require(all((r & fitz.Rect(b)).is_empty for g in cfg['groups'] for b in g.get('clips',[])),
+                    name + ' replacement duplicates a carried group')
         # A source identity may be curves too; the visual ledger remains the
         # authority. Searchable titles, when present, are additional evidence.
         text = ''.join(page.get_text(clip=fitz.Rect(e['regions']['identity']['box'])).split())
@@ -85,14 +101,25 @@ def load_source_fields(cfg, manifest_path):
                 require(''.join(e['fields'][key].split()) in text, f'complete source {key} not found in identity region')
     return e
 
+def authorized_field_regions(evidence):
+    """Use only after load_source_fields has validated the reviewed ledger."""
+    return [{'field':name, 'source_box':region['box'], 'expected':evidence['fields'][name],
+             'classification':'AUTHORIZED_TRANSFORM'}
+            for name,region in evidence.get('field_regions',{}).items()]
+
 def audit_source_fields(page, evidence):
     tolerance = audit_dynamic_tolerance(page, plan_dynamic_tolerance(evidence['tolerance_schema']))
     boxes = {'model': [491, 541, 635, 563], 'title': [696, 505, 813, 524], 'unit': [759, 527, 820, 545.5]}
+    for name,box in {'sheet':[701,545.5,775,564], 'scale_text':[679,527,759,545.5],
+                     'size':[638,545.5,701,564]}.items():
+        if name in evidence.get('field_regions',{}):boxes[name]=box
     identity = {}
     for key, box in boxes.items():
         actual = ''.join(page.get_text(clip=fitz.Rect(box)).split())
         expected = ''.join(evidence['fields'][key].split())
         if key == 'unit': expected = 'UNIT:' + expected
+        if key in {'sheet','scale_text','size'}:
+            expected={'sheet':'SHEET:','scale_text':'SCALE:','size':'SIZE:'}[key]+expected
         identity[key] = {'expected': expected, 'actual': actual, 'pass': actual == expected}
     font_checks=[]
     for info in page.get_fonts(full=True):

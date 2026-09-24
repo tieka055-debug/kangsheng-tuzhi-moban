@@ -878,8 +878,11 @@ class PipelineTest(unittest.TestCase):
         job=self.job('gray',edit)
         res=self.cli('build',job,'--output',self.base/'gray')
         self.assertNotEqual(res.returncode,0)
-        report=json.loads((self.base/'gray/audit.json').read_text())
-        self.assertGreater(report['source_unplaced_technical_ink_pixels'],0)
+        report=json.loads((self.base/'gray/source-inventory-gate.json').read_text())
+        self.assertEqual(report['status'],'SOURCE_INVENTORY_BLOCKED')
+        self.assertGreater(report['unplaced_technical_ink_pixels'],0)
+        self.assertFalse((self.base/'gray/candidate.pdf').exists())
+        self.assertFalse((self.base/'gray/drawing.pdf').exists())
 
     def test_non_ascii_footer_rejected_instead_of_silent_glyph_loss(self):
         job=self.job('footer',lambda c:c['fields'].update(scale_text='3：1',unit='毫米'))

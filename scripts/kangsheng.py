@@ -820,17 +820,14 @@ def mask_components(mask,min_pixels=4,limit=50):
     return sorted(items,key=lambda item:item['pixels'],reverse=True)[:limit]
 
 
-def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
-               expected_pixels=None,source_quality=None):
-    src=fitz.open(neutral);out=fitz.open(output)
-    require(len(out)==1 and abs(out[0].rect.width-PAGE[0])<.1 and abs(out[0].rect.height-PAGE[1])<.1,
-            'Output is not one landscape A4 page')
-    a=render_array(src[0]) if source_pixels is None else source_pixels
+def source_coverage_preflight(cfg, source_page, source_pixels, ps):
+    """Whole-sheet accounting before composing any deliverable candidate."""
+    a=source_pixels
     ink=a[:,:,:3].min(2)<150
     weak_ink=a[:,:,:3].min(2)<245
     interest=np.zeros(ink.shape,bool);covered=np.zeros_like(interest)
     if cfg.get('schema_version',1)>=2:
-        fill(interest,list(src[0].rect))
+        fill(interest,list(source_page.rect))
     else:
         for b in cfg['coverage']['include']:fill(interest,b)
     exclusion_audit=[]
@@ -838,7 +835,7 @@ def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
         erase=np.zeros_like(interest);fill(erase,ex['box'])
         text=[]
         box=fitz.Rect(ex['box'])
-        for word in src[0].get_text('words'):
+        for word in source_page.get_text('words'):
             if not (box&fitz.Rect(word[:4])).is_empty:text.append(str(word[4]))
         exclusion_audit.append({'kind':ex.get('kind','legacy'),'box':ex['box'],'reason':ex['reason'],
                                 'excluded_ink_pixels':int((erase&weak_ink).sum()),
@@ -846,8 +843,29 @@ def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
         interest &= ~erase
     for p in ps:fill(covered,p['source_box'])
     for rule in restored_rules(cfg):fill(covered,rule['source_box'])
+    authorized_fields=[]
+    if cfg.get('source_fields'):
+        from source_fields import load_source_fields, authorized_field_regions
+        evidence=cfg.get('_source_fields') or load_source_fields(cfg,cfg['_manifest_path'])
+        authorized_fields=authorized_field_regions(evidence)
+        for field in authorized_fields:fill(covered,field['source_box'])
     unplaced_mask=weak_ink&interest&~covered
     unplaced=int(unplaced_mask.sum())
+    return {"unplaced":unplaced,"unplaced_mask":unplaced_mask,
+            "exclusions":exclusion_audit,"authorized_fields":authorized_fields}
+
+
+def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
+               expected_pixels=None,source_quality=None):
+    src=fitz.open(neutral);out=fitz.open(output)
+    require(len(out)==1 and abs(out[0].rect.width-PAGE[0])<.1 and abs(out[0].rect.height-PAGE[1])<.1,
+            'Output is not one landscape A4 page')
+    a=render_array(src[0]) if source_pixels is None else source_pixels
+    coverage=source_coverage_preflight(cfg,src[0],a,ps)
+    ink=a[:,:,:3].min(2)<150
+    weak_ink=a[:,:,:3].min(2)<245
+    unplaced=coverage['unplaced'];unplaced_mask=coverage['unplaced_mask']
+    exclusion_audit=coverage['exclusions'];authorized_fields=coverage['authorized_fields']
     z=render_array(out[0])[:,:,:3].astype(np.float32)
     # Compare at the SAME alpha threshold as black-on-white source <150.
     # Raw R<110 would reject valid thin blue antialiasing strokes on pale background.
@@ -983,6 +1001,7 @@ def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
        'source_sha256':cfg['source']['sha256'],'output_sha256':digest(output),
        'inventory_sha256':inventory_hash(cfg),'source_inventory_sha256':source_inventory_hash(cfg),
        'source_unplaced_technical_ink_pixels':unplaced,
+       'authorized_source_field_regions':authorized_fields,
        'title_model_text_present':title_ok,'frame_field_occurrences':field_counts,
        'semantic_frame_fields_pass':title_ok,'mask_scale':S,'edge_pixels':EDGE,'dilation_pixels':DILATE,
        'max_missing_ratio_exclusive':MAX_MISSING,'color_mask':'background-relative blue/gold alpha; source-equivalent cutoff 1-150/255',
@@ -1164,6 +1183,16 @@ def _build_generate(args):
     neutral,colored,renderer,hit=cached_source(cfg,source,cache)
     source_pixels,render_hit=cached_render(neutral,cache)
     n=fitz.open(neutral);ps,source_quality=check_geometry(cfg,n[0],source_pixels)
+    coverage=source_coverage_preflight(cfg,n[0],source_pixels,ps)
+    save_json(outdir/'source-inventory-gate.json',{
+        'status':'SOURCE_INVENTORY_PASS' if coverage['unplaced']==0 else 'SOURCE_INVENTORY_BLOCKED',
+        'source_sha256':cfg['source']['sha256'],
+        'scope':'complete_original_page',
+        'unplaced_technical_ink_pixels':coverage['unplaced'],
+        'unplaced_regions':mask_components(coverage['unplaced_mask']),
+        'authorized_source_field_regions':coverage['authorized_fields'],
+        'nontechnical_exclusions':coverage['exclusions']})
+    require(coverage['unplaced']==0,'FAIL_SOURCE_COMPLETENESS before generation; inspect source-inventory-gate.json')
     d,p=compose_document(cfg,colored,assets,ps);expected_pixels=render_array(p)
     output=outdir/'drawing.pdf';tmp=outdir/'candidate.pdf'
     d.save(tmp,garbage=4,deflate=True,deflate_fonts=True,deflate_images=True,use_objstms=1)

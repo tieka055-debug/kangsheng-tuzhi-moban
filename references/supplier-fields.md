@@ -69,3 +69,14 @@ python scripts/kangsheng.py prepare-title-font jobs/JOB-fields.json \
 ```
 
 也可输入本机TTC及明确的字体索引，输出始终是独立字体；更新 manifest 的 assets.font 后再生成。
+
+## 精确标题字段与生成前覆盖检查
+
+新源可在 `source_fields` 账本中提供 `field_regions`，分别列出 `model`、`title`、
+`unit`、`sheet`、`scale_text`、`size` 的源框和 `raster_sha256`。
+每个字段必须有同一原件独立审核报告中的相同值与相同区域；不得与非技术排除区或搬运组重叠。
+这些源墨迹记为 `AUTHORIZED_TRANSFORM`，实际输出仍逐字段核对，不把技术标题字段伪装成家具排除。
+历史账本继续兼容，不修改历史认可成品。
+
+`build` 在写候选 PDF **之前**检查完整原页覆盖，并保存 `source-inventory-gate.json`。
+存在未解释墨迹时直接停止，不先生成候选再补完整性证明。

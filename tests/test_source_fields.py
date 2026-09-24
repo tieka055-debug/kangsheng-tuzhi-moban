@@ -9,7 +9,7 @@ import pymupdf as fitz
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from source_fields import (sha,crop_hash,semantic_digest,load_source_fields,audit_source_fields)
 from dynamic_tolerance import render_dynamic_tolerance
-from kangsheng import source_inventory_hash
+from kangsheng import source_inventory_hash, source_coverage_preflight, render_array
 
 class SourceFieldsTest(unittest.TestCase):
     def setUp(self):
@@ -85,3 +85,34 @@ class SourceFieldsTest(unittest.TestCase):
     def test_ledger_runtime_change_requires_review(self):
         self.e['pymupdf']='0.0';self.reseal()
         with self.assertRaisesRegex(ValueError,'runtime differs'):self.load()
+    def add_reviewed_region(self):
+        with fitz.open(self.root/'source.pdf') as d:
+            box=[660,490,730,520]
+            region={'box':box,'raster_sha256':crop_hash(d[0],box)}
+        self.e['field_regions']={'model':region}
+        self.review['rows'][0]['field_regions']=copy.deepcopy(self.e['field_regions'])
+        self.write('review.json',self.review)
+        self.e['review']['sha256']=sha(self.root/'review.json')
+        self.reseal()
+    def test_technical_identity_is_accounted_not_excluded(self):
+        self.add_reviewed_region();e=self.load()
+        cfg=dict(self.cfg,schema_version=2,coverage={'exclude':[]},_source_fields=e)
+        with fitz.open(self.root/'source.pdf') as d:
+            a=render_array(d[0]);ps=[{'source_box':[580,489,660,547]},
+                                   {'source_box':[730,490,840,540]}]
+            result=source_coverage_preflight(cfg,d[0],a,ps)
+            self.assertEqual(result['unplaced'],0)
+            self.assertEqual(result['authorized_fields'][0]['field'],'model')
+            cfg.pop('source_fields');cfg.pop('_source_fields')
+            self.assertGreater(source_coverage_preflight(cfg,d[0],a,ps)['unplaced'],0)
+    def test_unreviewed_identity_region_blocked(self):
+        self.add_reviewed_region();self.e['field_regions']['model']['box'][0]-=1;self.reseal()
+        with self.assertRaisesRegex(ValueError,'not independently reviewed'):self.load()
+    def test_identity_cannot_be_excluded_as_furniture(self):
+        self.add_reviewed_region()
+        self.cfg['coverage']={'exclude':[{'box':[660,490,840,540]}]}
+        with self.assertRaisesRegex(ValueError,'overlaps nontechnical exclusion'):self.load()
+    def test_identity_cannot_duplicate_carried_content(self):
+        self.add_reviewed_region()
+        self.cfg['groups'][0]['clips']=[[660,490,840,540]]
+        with self.assertRaisesRegex(ValueError,'duplicates a carried group'):self.load()
