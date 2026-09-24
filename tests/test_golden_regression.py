@@ -240,6 +240,8 @@ class GoldenRegressionTest(unittest.TestCase):
         self.assertEqual(self.check()['status'], 'INVALID_CANDIDATE')
 
     def test_pinned_126_replay_is_explicit_and_fails_closed_without_it(self):
+        if fitz.__version__ == '1.26.5':
+            self.skipTest('Cross-runtime scenario requires a different host version; same-runtime replay is tested separately')
         runtime = Path('/usr/bin/python3')
         inspection = subprocess.run([str(runtime), '-c',
                                      'import pymupdf;print(pymupdf.__version__)'],

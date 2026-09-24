@@ -4,7 +4,7 @@
 
 **已登记 SHA256 的原件无需模型再次排版。** 新型号、未知 SHA256 或不同内容的源文件仍需对照完整原件确认分组、裁切边界、排除区和布局，禁止套用其他图纸的裁切坐标。同型号原件是技术真源；用户明确认可的成品只提供品牌与版式依据，失败草稿不是样板。
 
-冻结 PDF 配方仍由未改动的 `scripts/kangsheng.py` 精确重放，避免破坏其哈希绑定黄金样本。新源（含栅格供应链图）的 candidate/AI layout 适配器在生成前必须调用 `scripts/source_inventory_gate.py` 的整页源清单门禁、`scripts/source_color_roles.py` 的供应商/family 色义预检，生成后以实际 PDF 搬运组和实际输出字段再次联账；旧 `draft`/旧私有试跑均不是新产品交付通道。
+冻结 PDF 配方由其绑定的引擎与运行时精确重放；升级代码不自动迁移旧哈希绑定配方。新源（含栅格供应链图）的 candidate/AI layout 适配器在生成前必须调用 `scripts/source_inventory_gate.py` 的整页源清单门禁、`scripts/source_color_roles.py` 的供应商/family 色义预检，生成后以实际 PDF 搬运组和实际输出字段再次联账；旧 `draft`/旧私有试跑均不是新产品交付通道。
 
 | 场景 | 正式入口 | 通过后意味着什么 |
 |---|---|---|
@@ -16,6 +16,18 @@
 唯一生产 CLI 是 `scripts/kangsheng.py`，不再依赖历史会话中的一次性脚本。
 
 新批量入口的输入契约、混合 PyMuPDF 运行时、异常队列及视觉/工程边界见 [确定性批量重放](references/product-batch.md)。此目录中的性能与版式扩展在隔离候选分支验证；未满足全部黄金回归前不得替换正式生产版本。
+
+## 当前供应商字段修订与可移植接力
+
+已审核新作业使用 `source_fields` 完整字段账本：原公差轮廓字也必须逐项计入，
+不以 `get_text()`/正则提取子集冒充完整源信息。公差按同源已审核字段输出英文疏排栏；
+标题/型号使用独立嵌入的字体子集，禁止把TTC集合直接作为单个PDF字体嵌入。
+
+`inspect-source-fields`、`prepare-title-font`、`recheck-source-fields`、`pack-local`、
+`handoff-check` 均由 `scripts/kangsheng.py` 调用。
+具体见 [供应商字段与接力](references/supplier-fields.md)。
+私有接力包包括原件、相对路径配方、字段审核证据和依赖锁；**不上传到本公开仓库**。
+该能力支持已审核源绑定配方的复用，不等于任意新供应商/新型号自动识别。
 
 ## 安装
 

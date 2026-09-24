@@ -79,6 +79,9 @@ def inventory_hash(cfg):
                   for key,path in assets.items()}
     runtime={'engine':digest(__file__),'frame':digest(Path(__file__).with_name('frame.py')),
              'version':VERSION,'qa_ruleset':QA_RULESET,'assets':asset_hashes}
+    if cfg.get('source_fields'):
+        runtime['source_fields']=digest(Path(__file__).with_name('source_fields.py'))
+        runtime['dynamic_tolerance']=digest(Path(__file__).with_name('dynamic_tolerance.py'))
     return hashlib.sha256(canonical({'recipe':recipe,'runtime':runtime})).hexdigest()
 
 
@@ -100,6 +103,8 @@ def source_inventory_hash(cfg):
            'table_headers':cfg.get('table_headers',[])}
     if cfg.get('approved_tolerance_reflow'):
         value['tolerance_source_map_sha256']=cfg['approved_tolerance_reflow']['source_map_sha256']
+    if cfg.get('source_fields'):
+        value['source_fields_sha256']=cfg['source_fields']['semantic_sha256']
     if cfg.get('approved_uniform_view_scales'):
         value['approved_uniform_view_scales']=cfg['approved_uniform_view_scales']
         value['view_pcb_scales']=[(g['id'],g['scale']) for g in cfg['groups']
@@ -374,6 +379,8 @@ def restored_rule_vector_checks(page,cfg):
 
 def read_manifest(path,check_review=True):
     path=Path(path).resolve(); cfg=json.loads(path.read_text())
+    if cfg.get('supplier_id') == 'zhiyuan-precision':
+        require(cfg.get('source_fields'), 'Current supplier requires a complete reviewed source_fields ledger')
     schema=cfg.get('schema_version')
     require(schema in {1,2},'schema_version must equal 1 or 2')
     require(cfg.get('color_profile','legacy-v1') in COLOR_PROFILES,'Unknown color profile')
@@ -416,6 +423,10 @@ def read_manifest(path,check_review=True):
         require(schema==2 and len(tolerance_groups)==1,
                 'Approved tolerance reflow needs the complete source tolerance group')
         load_tolerance_reflow(cfg,path)
+    if cfg.get('source_fields'):
+        require(not cfg.get('approved_tolerance_reflow'), 'Choose one authorized tolerance mode')
+        from source_fields import load_source_fields
+        cfg['_source_fields']=load_source_fields(cfg,path)
     small_font=fitz.Font(fontname='helv')
     small_values=[fields[k] for k in ['scale_text','unit','sheet']]+[fields.get('revision','')]+fields['tolerances']
     require(all(small_font.has_glyph(ord(c)) for value in small_values for c in value),
@@ -874,7 +885,7 @@ def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
     # furniture for *other groups' extra-ink accounting*. Source coverage and
     # all non-tolerance missing-ink checks remain unchanged; this exact cell
     # receives a separate field+approved-visual check below.
-    furniture_boxes=(RESERVED if cfg.get('approved_tolerance_reflow') or cfg.get('schema_version',1)<2
+    furniture_boxes=(RESERVED if cfg.get('source_fields') or cfg.get('approved_tolerance_reflow') or cfg.get('schema_version',1)<2
                      else RESERVED[:1])
     for b in furniture_boxes:
         fill(furniture,list(b))
@@ -956,6 +967,13 @@ def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
             'source_review_status':'REQUIRES_INDEPENDENT_REVIEW',
             'raw_original_tolerance_checks':[c for c in checks if c['id'] in tol_ids]}
         group_ok=all(c['pass'] for c in checks if c['id'] not in tol_ids) and tolerance_reflow['pass']
+    elif cfg.get('source_fields'):
+        from source_fields import load_source_fields, audit_source_fields
+        evidence=cfg.get('_source_fields') or load_source_fields(cfg,cfg['_manifest_path'])
+        tolerance_reflow=audit_source_fields(out[0],evidence)
+        tol_ids={g['id'] for g in cfg['groups'] if g['kind']=='tolerance'}
+        tolerance_reflow['raw_original_tolerance_checks']=[c for c in checks if c['id'] in tol_ids]
+        group_ok=all(c['pass'] for c in checks if c['id'] not in tol_ids) and tolerance_reflow['pass']
     else:
         group_ok=all(c['pass'] for c in checks)
     restored_vector_checks=restored_rule_vector_checks(out[0],cfg)
@@ -1006,8 +1024,9 @@ def compose_document(cfg,colored,assets,ps):
     page.insert_image(page.rect,filename=assets['background'])
     color=fitz.open(colored)
     visual_trial=cfg.get('approved_tolerance_reflow')
+    source_fields=cfg.get('source_fields')
     for item in ps:
-        if item['kind']!='projection' and not (visual_trial and item['kind']=='tolerance'):
+        if item['kind']!='projection' and not ((visual_trial or source_fields) and item['kind']=='tolerance'):
             page.show_pdf_page(fitz.Rect(item['target_box']),color,0,clip=fitz.Rect(item['source_box']))
     draw_table_headers(page,cfg)
     fields=dict(cfg['fields']);fields['cjk_font_file']=assets['font']
@@ -1016,6 +1035,11 @@ def compose_document(cfg,colored,assets,ps):
         fields['tolerances']=ref['layout']['fields']['tolerances']
     draw_frame_and_title(page,fields,assets,
                          tolerance_mode='legacy' if visual_trial or cfg.get('schema_version',1)==1 else 'source')
+    if source_fields:
+        from source_fields import load_source_fields
+        from dynamic_tolerance import render_dynamic_tolerance
+        evidence=cfg.get('_source_fields') or load_source_fields(cfg,cfg['_manifest_path'])
+        render_dynamic_tolerance(page,evidence['tolerance_schema'])
     for item in ps:
         if item['kind']=='projection':
             page.show_pdf_page(fitz.Rect(item['target_box']),color,0,clip=fitz.Rect(item['source_box']))
@@ -1657,6 +1681,10 @@ def main():
     subs=parser.add_subparsers(dest='command',required=True)
     from approved_recipe import register_cli
     register_cli(subs)
+    from source_fields import register_cli as register_source_fields_cli
+    register_source_fields_cli(subs)
+    from portable_handoff import register_cli as register_handoff_cli
+    register_handoff_cli(subs)
     p=subs.add_parser('init');p.add_argument('source');p.add_argument('--manifest',required=True);p.add_argument('--model',required=True);p.add_argument('--rotation',type=int,choices=[0,90,180,270],required=True);p.set_defaults(func=init)
     p=subs.add_parser('draft');p.add_argument('manifest');p.add_argument('--output',required=True);p.add_argument('--cache');p.add_argument('--control-root',required=True);p.add_argument('--allow-retry',action='store_true');p.set_defaults(func=draft)
     p=subs.add_parser('build');p.add_argument('manifest');p.add_argument('--output',required=True);p.add_argument('--cache');p.add_argument('--control-root',required=True);p.add_argument('--allow-retry',action='store_true');p.set_defaults(func=build)

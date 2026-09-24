@@ -9,6 +9,14 @@ description: 将单页供应链连接器工程 PDF 按已审核清单重排为�
 
 > 同型号供应链原件是技术真源；用户明确认可的成品是品牌与版式参考。失败草稿不是样板。视觉认可不等于工程发布审核，不跨型号复用裁切坐标、技术值或 PASS 结论。
 
+## 当前供应商修订入口（先读）
+
+当前质源供应商的新生产沿用同一矢量引擎，增加 **完整源字段账本与独立嵌入字体**。
+同类图先读 [供应商字段与跨模型接力](references/supplier-fields.md)，再执行 `scripts/kangsheng.py`；
+不得运行旧私人 `render_dynamic_batch.py` 的正则公差提取器。源公差可能是曲线字，PDF可搜索文字只是子集。
+新作业声明 `supplier_id: zhiyuan-precision`，必须提供 `source_fields`；配方绑定原件SHA，未知原件仍需自身清单。
+接力包先读 `HANDOFF.json` 并执行 `handoff-check`，不要翻聊天或重新搭建流水线。
+
 ## 先选入口
 
 1. **同一原件、SHA256 已登记且有冻结配方**：单张使用 `replay`，多张隔离批量使用 `batch` 的 `kangsheng-products-v1` 输入，直接复现已认可版式，不重新排版。详见 [认可配方冻结与重放](references/approved-replay.md) 与 [确定性批量重放](references/product-batch.md)。

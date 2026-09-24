@@ -88,7 +88,8 @@ class StableBatchTest(unittest.TestCase):
         answer = {"output_sha256": "b" * 64, "reused": False,
                   "different_pixels": 0, "generation_seconds": 1.25,
                   "qa_seconds": .5}
-        with patch.object(batch.subprocess, "run", return_value=SimpleNamespace(
+        with patch.object(batch.fitz, "__version__", "test-other-runtime"), \
+             patch.object(batch.subprocess, "run", return_value=SimpleNamespace(
                 returncode=0, stdout=json.dumps(answer), stderr="")) as process:
             row = batch._replay_worker(task)
         self.assertEqual(row["status"], "PASS_VISUAL_REPLAY")
