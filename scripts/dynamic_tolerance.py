@@ -53,7 +53,6 @@ def normalize_tolerance_schema(value: dict[str, Any]) -> dict[str, list[dict[str
         if not isinstance(rows, list):
             raise ValueError(f"{key} must be an explicit array")
         normalized = []
-        seen_tiers = set()
         for index, row in enumerate(rows):
             if key == "additional_tolerance_conditions":
                 if isinstance(row, str):
@@ -68,9 +67,8 @@ def normalize_tolerance_schema(value: dict[str, Any]) -> dict[str, list[dict[str
                     raise ValueError(f"{key}[{index}] needs tier and value")
                 tier = _text(row["tier"], f"{key}[{index}].tier")
                 amount = _text(row["value"], f"{key}[{index}].value")
-                if tier in seen_tiers:
-                    raise ValueError(f"{key} has a duplicate tier: {tier}")
-                seen_tiers.add(tier)
+                # Source drawings can genuinely repeat a tier label. Preserve
+                # the ordered rows; never deduplicate or "correct" source data.
                 normalized.append({"tier": tier, "value": amount})
         result[key] = normalized
     if not any(result.values()):

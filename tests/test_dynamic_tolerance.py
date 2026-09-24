@@ -88,10 +88,27 @@ class DynamicToleranceTests(unittest.TestCase):
         schema["linear_tolerances"][0]["tier"] = " X."
         with self.assertRaisesRegex(ValueError, "outer whitespace"):
             normalize_tolerance_schema(schema)
+
+    def test_repeated_source_tiers_keep_both_values_and_order(self):
+        schema = eight_field_schema()
+        schema["linear_tolerances"][1]["tier"] = "X.XX"
+        expected = copy.deepcopy(schema)
+        self.assertEqual(normalize_tolerance_schema(schema), expected)
+        doc = fitz.open(); page = doc.new_page(width=PAGE[0], height=PAGE[1])
+        plan = render_dynamic_tolerance(page, schema)
+        self.assertTrue(audit_dynamic_tolerance(page, plan)["pass"])
+        self.assertEqual([i["text"] for i in plan["items"][:4]],
+                         [f"{r['tier']} {r['value']}" for r in expected["linear_tolerances"]])
+        doc.close()
+
+    def test_identical_source_rows_preserve_multiplicity(self):
         schema = eight_field_schema()
         schema["linear_tolerances"][1] = copy.deepcopy(schema["linear_tolerances"][0])
-        with self.assertRaisesRegex(ValueError, "duplicate tier"):
-            normalize_tolerance_schema(schema)
+        doc = fitz.open(); page = doc.new_page(width=PAGE[0], height=PAGE[1])
+        plan = render_dynamic_tolerance(page, schema)
+        self.assertTrue(audit_dynamic_tolerance(page, plan)["pass"])
+        self.assertEqual(sum(i["text"] == "X. ±0.31" for i in plan["items"]), 2)
+        doc.close()
 
 
 if __name__ == "__main__":
