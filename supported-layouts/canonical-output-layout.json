@@ -1,0 +1,37 @@
+{
+  "schema_version": "kangsheng-canonical-output-layout-v1",
+  "status": "SUPPORTED_COMPATIBLE_SLOT_RULE",
+  "scope": "Output semantic placement only; source detection and technical QA remain independent gates.",
+  "source_position_policy": "Source coordinates locate content but never determine destination slots. A position-only change with the same verified semantic block types is SUPPORTED_COMPATIBLE, not NEW_LAYOUT.",
+  "slots": {
+    "RIGHT_TOP_TABLE": {
+      "semantic_roles": ["part_table", "pin_table", "dim_model_table"],
+      "rail_pt": [600, 38, 795, 440],
+      "align": "top-right; preserve aspect ratio; expand downward with source row count"
+    },
+    "RIGHT_MIDDLE_PERFORMANCE": {
+      "semantic_roles": ["performance"],
+      "align": "same left/right edges as table, below table",
+      "minimum_gap_pt": 12
+    },
+    "MAIN_ENGINEERING": {
+      "semantic_roles": ["primary_view", "secondary_view", "third_view", "fourth_view"],
+      "region_pt": [35, 45, 570, 470],
+      "rule": "preserve each complete view at one uniform scale; no overlap or footer intrusion"
+    },
+    "PCB": {
+      "semantic_roles": ["pcb"],
+      "region_pt": [260, 45, 570, 450],
+      "rule": "place in central/lower main engineering region, not the right-top table slot"
+    },
+    "BOTTOM_TITLE": {"region_pt": [488, 450, 820, 564], "rule": "fixed approved logo/company/title frame"},
+    "BOTTOM_TOLERANCE": {"region_pt": [400, 493, 488, 564], "rule": "approved English sparse tolerance block; values source-bound"}
+  },
+  "right_rail_fit": {
+    "width_pt": 195,
+    "minimum_effective_scale_pt_per_source_px": 0.38,
+    "on_overflow_or_unreadable": "AI_LOCAL_REVIEW",
+    "never_relocate_to_center_silently": true
+  },
+  "promotion_gate": "This semantic slot rule is compatible across source positions. A source-family locator remains CANDIDATE until distinct-source generation and QA pass; no golden recipe is altered."
+}
