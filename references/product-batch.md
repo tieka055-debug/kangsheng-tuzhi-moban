@@ -25,7 +25,7 @@ python scripts/kangsheng.py batch PRODUCTS.json \
 
 若账本同时含由 PyMuPDF 1.26.5 创建的已认可旧视觉 PDF，显式增加 `--runtime-126 PATH_TO_PINNED_PYTHON`；该 Python 必须实际报告 1.26.5。每张配方绑定自己的 PyMuPDF 版本，程序按绑定版本选进程重放。缺失或版本不符时停在 `NEEDS_AI_REVIEW`，不换渲染器凑近似图。
 
-预检核对原图 SHA、身份、单页/方向/尺寸与结构特征、catalog 状态、独立认可 anchor、配方内容/引擎/资产及认可 PDF。结构特征只给出候选族，绝不允许跨源复制尺寸、公差、Pin、Part No.、PCB 或性能参数。新结构、额外技术区域或不确定品牌墨迹一律送 `NEEDS_AI_REVIEW`；智能体只接收该件的源图、局部证据和失败理由，在隔离目录研究。另一个同结构源未经独立提取器和回归验证前，不将家族晋升为泛化 `SUPPORTED`。
+预检核对原图 SHA、身份、单页/方向/尺寸与结构特征、catalog 状态、独立认可 anchor、配方内容/引擎/资产及认可 PDF。结构特征只给出候选族，绝不允许跨源复制尺寸、公差、Pin、Part No.、PCB 或性能参数。新结构、额外技术区域或不确定品牌墨迹在**这个精确重放入口**中送 `NEEDS_AI_REVIEW`；该队列标志不是调用完整 AI 重排的许可。后续新源适配必须先过完整原页 `SOURCE_INVENTORY_GATE`；仅一个局部不确定时只做 `AI_LOCAL_REVIEW`，确有新技术区域类型才判 `NEW_LAYOUT`。智能体只接收该件的源图、局部证据和失败理由，在隔离目录研究。另一个同结构源未经独立提取器、源完整性/颜色/布局 QA 和回归验证前，不将家族晋升为泛化 `SUPPORTED`。
 
 输出为 `batch-result.json`、`needs-ai-review.json` 和每件的 `drawing.pdf`、`preview.png`、`replay-check.json`。终端只打印产品 ID、型号、layout、状态、生成/核验/总耗时。成功状态 `PASS_VISUAL_REPLAY` 表示对该件已认可整页 PDF 的 4×RGB 零差重放；PDF 字节 SHA 可能因 trailer `/ID` 不同而变动，不能以视觉 SHA 取代配方与源 SHA 绑定。相同输入及代码/规则/账本/anchor/运行时不变时，批量缓存可直接复用；任一绑定变动则进入新输出命名空间并重新核验。
 

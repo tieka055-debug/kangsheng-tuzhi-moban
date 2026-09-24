@@ -44,7 +44,7 @@ python scripts/kangsheng.py build JOB.json --output WORK/build-new \
 - 唯一运行账本：`WORK/control/batch-state.json`（schema v2）；详细生成日志在各运行目录。旧 schema v1 不自动迁移，原文件保持不变并停止运行。
 - 汇总：`WORK/batch/job-summary.json`。
 - 每次 build 使用独立目录：`JOB_ID/INVENTORY_HASH-aN/`；失败证据不会被覆盖。
-- 常见状态：`PREFLIGHT_FAIL`、`AUTO_QA_FAIL`、`DRAFT_QA_PASS`、`AUTO_QA_PASS`、`BLOCKED_PILOT_GATE`、`RELEASE_READY`、`NEEDS_REVIEW_RETRY_LIMIT`。
+- 常见状态：`PREFLIGHT_FAIL`、`AUTO_QA_FAIL`、`DRAFT_QA_PASS`（历史状态名，仅内部诊断，不代表完整源页技术 QA 通过）、`AUTO_QA_PASS`、`BLOCKED_PILOT_GATE`、`RELEASE_READY`、`NEEDS_REVIEW_RETRY_LIMIT`。新产品候选须另经 `SOURCE_INVENTORY_GATE`，不能凭旧 draft 状态交付。
 - 未变化的失败不会重复烧算力；修改布局会改变配方哈希，但不会清零按 `record_id` + 已核验源 SHA256 绑定的次数。同配方第二次生成需显式 `--allow-retry`；此参数和 `--max-attempts` 不能突破两次上限。
 - 如确需人工重置，用独立 `reset-attempts --control-root ... --record-id ... --source-sha256 ... --stage draft|build --operator ... --reason ...` 命令；原历史留在事件中。不得在普通批次中重置。正常 CLI 只输出短摘要，细节查证据路径。
 

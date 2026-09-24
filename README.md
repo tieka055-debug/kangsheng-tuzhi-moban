@@ -1,8 +1,10 @@
 # kangsheng-tuzhi-moban
 
-把**单页**供应链连接器工程 PDF 制作为康生品牌图纸：同一原件按冻结的认可配方精确复现，新原件按人工核定的清单重排，并保留完整工程 QA 与独立发布门禁。
+把**单页**供应链连接器工程 PDF/栅格原图制作为康生品牌图纸：同一 PDF 原件按冻结的认可配方精确复现；新原件先以完整原页通过 `SOURCE_INVENTORY_GATE`，再按已核定清单重排，并保留完整工程 QA 与独立发布门禁。
 
 **已登记 SHA256 的原件无需模型再次排版。** 新型号、未知 SHA256 或不同内容的源文件仍需对照完整原件确认分组、裁切边界、排除区和布局，禁止套用其他图纸的裁切坐标。同型号原件是技术真源；用户明确认可的成品只提供品牌与版式依据，失败草稿不是样板。
+
+冻结 PDF 配方仍由未改动的 `scripts/kangsheng.py` 精确重放，避免破坏其哈希绑定黄金样本。新源（含栅格供应链图）的 candidate/AI layout 适配器在生成前必须调用 `scripts/source_inventory_gate.py` 的整页源清单门禁、`scripts/source_color_roles.py` 的供应商/family 色义预检，生成后以实际 PDF 搬运组和实际输出字段再次联账；旧 `draft`/旧私有试跑均不是新产品交付通道。
 
 | 场景 | 正式入口 | 通过后意味着什么 |
 |---|---|---|
@@ -39,7 +41,7 @@ python scripts/kangsheng.py replay-batch --registry REGISTRY.json \
 
 成功状态为 **`APPROVED_VISUAL_REPLAY_VERIFIED`**，始终标记 **`engineering_release=false`**，不产生 `release.json`。用户的视觉认可不替代源清单审核、独立终审或现有工程发布规则。完整契约见 [认可配方冻结与重放](references/approved-replay.md)。
 
-颜色策略随配方冻结：`cyan-gold-v1` 将原图青色针脚转为金色，其余非白色内容转为蓝色；`legacy-v1` 保留旧行为，不全局改动旧稿。公差表保留原矢量单元格和闭合网格并贴齐底部，投影符号在专用格居中。
+冻结 exact replay 保留原配方颜色行为：`cyan-gold-v1` 和 `legacy-v1` 仅用于绑定旧认可基线的兼容重放，不全局改动黄金图纸。**新源 canonical** 规则不同：普通工程内容康生蓝；经该供应商/family 确认的强调技术角色（不论源为红、绿、青等）转低饱和康生金，未知色义须局部审阅。普通公差使用已认可英文疏排栏，逐字段从自己的源图核对；旧原表搬运仅是兼容模式。投影符号仍在专用格。
 
 ## 新原件：v2 工程制作
 
@@ -65,9 +67,9 @@ python scripts/kangsheng.py draft JOB.json --output WORK/draft \
 python scripts/kangsheng.py hashes JOB.json
 ```
 
-`draft` 不要求源清单已审核；配方和产物未变时复用，重生成会计数。同目录重生成会替换固定草稿产物，但保留逐次生成日志。草稿仍执行结构和自动 QA，不生成发布凭证。布局稳定后，由独立源审核者核对完整未裁切原页，把 `source_inventory_sha256`、审核者和独立 `reviewer_run_id` 写入 `review`，再构建：
+旧 `draft` 不要求源清单已审核；配方和产物未变时复用，重生成会计数。同目录重生成会替换固定草稿产物，但保留逐次生成日志。**该产物只供隔离诊断，不是可交付候选；逐组 QA 通过不能宣称完整技术 QA 通过。** 所有新结构 candidate/AI layout 路径也须先以完整未裁切原页通过 `SOURCE_INVENTORY_GATE`，未知源对象不得自行排除。布局稳定后，由独立源审核者核对完整未裁切原页，把 `source_inventory_sha256`、审核者和独立 `reviewer_run_id` 写入 `review`，再构建：
 
-已批准英文公差重排仅用于有逐型号原图字段映射且无额外条件的四档结构；此时仍保留原表像素差，但由源字段逐项核对和认可英文栏局部像素对照判定该授权区域。可对既有候选只读复检，不增加生成次数：
+现有 v2 的 `approved_tolerance_reflow` 兼容实现仅支持有逐型号原图字段映射且无表内额外条件的四档结构；源公差仍列在技术清单并保留原表像素差，不能列入非技术排除。新源多档、角度或额外条件须完整适配英文视觉并逐项核对，在支持前阻断而非删档/恢复旧视觉。可对既有候选只读复检，不增加生成次数：
 
 ```sh
 python scripts/kangsheng.py recheck-candidate JOB.json WORK/draft/draft.pdf \
@@ -106,7 +108,9 @@ python scripts/kangsheng.py verify JOB.json WORK/run-001/drawing.pdf \
 
 ## v2 质量门禁
 
-- 覆盖范围固定为旋转后的完整源页减去带类型的非技术排除区；其余技术墨迹必须由内容组或经审核的闭合线承载。
+- `SOURCE_INVENTORY_GATE` 在最终布局生成前清点完整原页：全部工程视图、尺寸/标注、PCB、型号表、性能、公差、投影、技术说明和额外条件；每项归入搬运、逐字段 `AUTHORIZED_TRANSFORM` 或经审核的非技术排除。未知对象、未放置技术对象/墨迹数必须为 0；否则 `SOURCE_INVENTORY_BLOCKED` / `FAIL_SOURCE_COMPLETENESS`，不能报告候选技术 QA 通过。
+- 覆盖范围固定为旋转后的完整源页减去带类型的非技术排除区；其余技术墨迹必须由内容组、经审核的闭合线或授权语义替换账本承载。**已选组像素一致不是整页完整性。**
+- 颜色 QA 单独给 `COLOR_SEMANTIC_PASS` / `COLOR_SEMANTIC_REVIEW` / `COLOR_SEMANTIC_FAIL`；布局 QA 单独给 `LAYOUT_QA_PASS`。只有源清单通过、颜色通过或获明确批准、布局通过，样本才可进入 family 候选学习。
 - 检查裁切是否携带 `reviewed_source_extent` 外墨迹、是否切到文字、可提取技术文字缩放后是否低于 **4.75 pt**。
 - 检查页面边界、保留区、真实墨迹重叠、表格/性能位置、标题与型号可搜索文本。
 - 每片缺失和新增墨迹比例必须低于 **0.2%**；另对整张确定性输出做 expected-vs-actual 检查，可发现空白区或标题格中的增删改。

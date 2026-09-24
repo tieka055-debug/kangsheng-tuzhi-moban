@@ -1,7 +1,7 @@
 {
   "schema_version": "kangsheng-supported-layout-catalog-v1",
   "catalog_version": "0.1.0",
-  "promotion_rule": "SUPPORTED requires two distinct source PDFs of the same structure to pass programmatic generation and full QA without new manual coordinates; SUPPORTED_EXACT permits only SHA-bound frozen replay of registered sources.",
+  "promotion_rule": "A new-source sample is eligible for CANDIDATE learning only after SOURCE_INVENTORY_PASS AND (COLOR_SEMANTIC_PASS or explicit reviewed approval) AND LAYOUT_QA_PASS, with full-source completeness QA and no unplaced technical content. Generic SUPPORTED additionally requires two distinct original sources of the same structure to pass programmatic generation and full QA without new manual coordinates; SUPPORTED_EXACT permits only SHA-bound frozen replay of registered sources.",
   "layouts": [
     {
       "layout_id": "cn-vector-multiview-split-pcb-table",
