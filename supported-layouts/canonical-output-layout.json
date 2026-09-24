@@ -16,13 +16,13 @@
     },
     "MAIN_ENGINEERING": {
       "semantic_roles": ["primary_view", "secondary_view", "third_view", "fourth_view"],
-      "region_pt": [35, 45, 570, 470],
-      "rule": "preserve each complete view at one uniform scale; no overlap or footer intrusion"
+      "region_pt": [35, 29, 570, 493],
+      "rule": "preserve each complete view at one uniform scale; positions are computed from block sizes, never copied from source; no overlap or footer intrusion"
     },
     "PCB": {
       "semantic_roles": ["pcb"],
-      "region_pt": [260, 45, 570, 450],
-      "rule": "place in central/lower main engineering region, not the right-top table slot"
+      "region_pt": [260, 29, 488, 493],
+      "rule": "place in central/lower main engineering region, not the right-top table slot; reserve the bottom-right title and tolerance cells"
     },
     "BOTTOM_TITLE": {"region_pt": [488, 450, 820, 564], "rule": "fixed approved logo/company/title frame"},
     "BOTTOM_TOLERANCE": {"region_pt": [400, 493, 488, 564], "rule": "approved English sparse tolerance block; values source-bound"}
