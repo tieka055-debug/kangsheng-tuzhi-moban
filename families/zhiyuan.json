@@ -1,0 +1,87 @@
+{
+  "schema": "kangsheng-family-config-probe-v0",
+  "family_id": "zhiyuan-precision",
+  "note": "Phase-0 probe config. Relative rules only; no absolute per-drawing coordinates.",
+  "title_block": {
+    "labels": [
+      "版本REV",
+      "未注公差",
+      "视图方法",
+      "图号MODEL",
+      "品名",
+      "比例SCALE",
+      "单位UNIT",
+      "页码SHEET",
+      "绘制DRAWN",
+      "设计DES",
+      "审核CHK",
+      "批准APPV",
+      "深圳市质源精密电子有限公司",
+      "TOOLERANCE",
+      "PROJECTION",
+      "第"
+    ],
+    "top_label": "版本REV",
+    "tolerance_heading": "未注公差",
+    "projection_label": "视图方法",
+    "name_row_labels": [
+      "绘制DRAWN",
+      "设计DES",
+      "审核CHK",
+      "批准APPV"
+    ],
+    "fields": {
+      "title": "品名",
+      "model": "图号MODEL",
+      "scale_text": "比例SCALE",
+      "unit": "单位UNIT",
+      "sheet": "页码SHEET"
+    },
+    "size_values": [
+      "A4",
+      "A3",
+      "A2"
+    ]
+  },
+  "watermark_patterns": [
+    "Autodesk",
+    "教育版",
+    "产品制作"
+  ],
+  "watermark_single_chars": [
+    "由"
+  ],
+  "block_hints": {
+    "performance": [
+      "性能",
+      "NOTES"
+    ],
+    "pcb": [
+      "RECOMMENDED"
+    ],
+    "table_header": [
+      "PART",
+      "Pin数",
+      "规格"
+    ],
+    "part_regex": "^BC-\\d"
+  },
+  "layout": {
+    "rail": [
+      600,
+      38,
+      795,
+      440
+    ],
+    "rail_gap": 12,
+    "block_gap": 5,
+    "min_font_pt": 4.75,
+    "performance_min_y": 178.6,
+    "performance_min_font_pt": 8.0,
+    "table_min_scale": 0.75,
+    "rail_max_x0": 524.0,
+    "_note_rail": "User-approved 2026-09-25: rail widening OK; shrink table/performance before ever dropping content.",
+    "fallback_performance_min_font_pt": 6.0
+  },
+  "color_profile": "nonblack-gold-v1"
+}

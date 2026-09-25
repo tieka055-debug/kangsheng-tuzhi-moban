@@ -1,3 +1,7 @@
-# 工程图纸代码入口
+# 给代理的说明
 
-读取根目录 `SKILL.md`。唯一生产 CLI 为 `scripts/kangsheng.py`，不要引入旧动态装箱、任意表格数值转录或旧上传入口。已审核公差的source_fields语义替换是明确支持的例外，遵循references/supplier-fields.md。原件是数据真源，清单中的坐标不是跨型号通用模板。公开目录不保存供应链原件、成品或凭证。更改程序后运行 `python -m unittest discover -s tests -v`，真实源回归在仓库外完成。
+- 唯一入口：`pipeline/run_batch.py`（draft → 读公差 → finish）。按 `SKILL.md` 执行，不要翻历史聊天。
+- 不要逐张手写坐标，也不要为单张图改族配置。例外只做局部处理（见 SKILL.md 第 6 节）。
+- 读公差时只读本图的小图，逐行照原图写，不跨型号抄值。
+- 修改代码后先运行 `python -m unittest discover -s tests`，再在本机回归清单上重跑，确认没有退步。
+- 不上传原图、成品、业务数据。

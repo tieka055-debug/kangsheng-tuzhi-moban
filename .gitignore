@@ -1,13 +1,5 @@
-.venv/
 __pycache__/
-*.py[cod]
-.cache/
-.DS_Store
-work/
-output/
-*.pdf
-*.log
-.env*
-*token*
-*manifest*.json
-*review*.json
+.venv/
+*.pyc
+out/
+runs/

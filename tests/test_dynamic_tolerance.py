@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pymupdf as fitz
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "engine"))
 from dynamic_tolerance import (audit_dynamic_tolerance, normalize_tolerance_schema,
                                plan_dynamic_tolerance, render_dynamic_tolerance)
 from frame import PAGE, TOLERANCE_BOX

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 import pymupdf as fitz
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'engine'))
 from source_fields import (sha,crop_hash,semantic_digest,load_source_fields,audit_source_fields)
 from dynamic_tolerance import render_dynamic_tolerance
 from kangsheng import source_inventory_hash, source_coverage_preflight, render_array

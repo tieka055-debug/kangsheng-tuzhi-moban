@@ -23,7 +23,7 @@ from frame import (BLUE, PAGE, FRAME, TITLE_BOX, TOLERANCE_BOX, PROJECTION_BOX,
 
 VERSION = '2.1.0-candidate'
 QA_RULESET = 'source-preservation-plus-approved-english-tolerance-v1'
-COLOR_PROFILES = {'legacy-v1', 'cyan-gold-v1'}
+COLOR_PROFILES = {'legacy-v1', 'cyan-gold-v1', 'nonblack-gold-v1'}
 STROKE_PROFILES = {'source', 'legacy-thin-stroke-boost-v1'}
 S = 4
 EDGE = 2  # 0.5 PDF point at 4x rendering, renderer boundary antialiasing only.
@@ -101,6 +101,9 @@ def source_inventory_hash(cfg):
     value={'source':source,'identity':cfg.get('identity',{}),'fields':cfg.get('fields',{}),
            'groups':groups,'coverage':cfg.get('coverage',{}),
            'table_headers':cfg.get('table_headers',[])}
+    object_binding=object_exclusion_binding(cfg)
+    if object_binding:
+        value['object_exclusion']=object_binding
     if cfg.get('approved_tolerance_reflow'):
         value['tolerance_source_map_sha256']=cfg['approved_tolerance_reflow']['source_map_sha256']
     if cfg.get('source_fields'):
@@ -115,6 +118,26 @@ def source_inventory_hash(cfg):
 def resolve(base, value):
     p=Path(value).expanduser()
     return p.resolve() if p.is_absolute() else (base/p).resolve()
+
+
+def object_exclusion_binding(cfg):
+    """Path-independent hashes that bind an exact object exclusion to a job."""
+    ref=cfg.get('object_exclusion')
+    if not ref:return None
+    return {key:ref.get(key) for key in (
+        'schema','source_sha256','derived_sha256','ledger_sha256','review_sha256')}
+
+
+def source_inventory_page(source,cfg,reference_page):
+    """Open the original bytes in the same reviewed orientation as render input."""
+    if not cfg.get('_object_exclusion'):
+        return None
+    doc=fitz.open(source)
+    require(len(doc)==1,'Object-excluded source inventory requires one original page')
+    page=doc[0];page.set_rotation(cfg['source']['rotation']);page.remove_rotation()
+    require(page.rect==reference_page.rect,
+            'Original and operation-verified derived page geometry differ after rotation')
+    return doc
 
 
 def compact(value):
@@ -516,6 +539,33 @@ def read_manifest(path,check_review=True):
         if schema>=2:
             require(ex.get('kind') in EXCLUSION_KINDS,
                     'Manifest v2 exclusions need a restricted nontechnical kind')
+    if cfg.get('object_exclusion'):
+        require(schema==2,'Object-level exclusions require Manifest v2')
+        ref=cfg['object_exclusion']
+        require(ref.get('schema')=='kangsheng-object-exclusion-ref-v1',
+                'Unknown object_exclusion reference schema')
+        require(ref.get('source_sha256')==cfg['source']['sha256'],
+                'Object-exclusion evidence must bind the original source SHA256')
+        require(not any(ex.get('kind')=='watermark' for ex in coverage.get('exclude',[])),
+                'Object-level watermark evidence cannot be combined with rectangular watermark exclusions')
+        required_ref=['derived_pdf_path','derived_sha256','ledger_path','ledger_sha256',
+                      'review_path','review_sha256']
+        require(all(ref.get(key) for key in required_ref),
+                'Object-exclusion reference is incomplete')
+        base=path.parent
+        from object_exclusion import load_review, validate_transform
+        derived_path=resolve(base,ref['derived_pdf_path'])
+        ledger_path=resolve(base,ref['ledger_path'])
+        review_path=resolve(base,ref['review_path'])
+        object_review=load_review(review_path,ref['source_sha256'],ref['derived_sha256'],
+                                  ref['ledger_sha256'],ref['review_sha256'])
+        object_validation=validate_transform(source,derived_path,ledger_path,
+            ref['source_sha256'],ref['derived_sha256'],ref['ledger_sha256'])
+        cfg['_object_exclusion']={
+            'derived_pdf_path':str(derived_path),'ledger_path':str(ledger_path),
+            'review_path':str(review_path),'reviewer':object_review['reviewer'],
+            'reviewer_run_id':object_review['reviewer_run_id'],
+            'validation':object_validation}
     # A reviewed nontechnical source-furniture exclusion is also a hard clip
     # boundary. Otherwise a broad crop can leak DATE/title-frame fragments
     # into a tolerance or projection group while raster preservation passes.
@@ -550,6 +600,9 @@ def read_manifest(path,check_review=True):
                     'Manifest v2 source review needs an independent reviewer_run_id')
             require(review.get('source_inventory_sha256')==source_inventory_hash(cfg),
                     'Source clips or inventory changed after review')
+            if cfg.get('object_exclusion'):
+                require(review.get('object_exclusion_binding')==object_exclusion_binding(cfg),
+                        'Source review must bind original, derived, ledger and independent-review hashes')
         else:
             require(review.get('inventory_sha256')==inventory_hash(cfg),'Inventory changed after review')
     cfg['_manifest_path']=str(path)  # runtime resolution only; excluded from recipe hash
@@ -560,6 +613,10 @@ def classify_color(rgb,profile='legacy-v1'):
     require(profile in COLOR_PROFILES,'Unknown color profile')
     r,g,b=rgb
     if min(rgb)>=.96: return rgb
+    if profile=='nonblack-gold-v1':
+        # User rule 2026-09-25: black/grey -> Kangsheng blue; every non-black colour -> gold.
+        if max(rgb)-min(rgb)<.10: return BLUE
+        return (217/255,154/255,0)
     if profile=='cyan-gold-v1':
         # Approved contact-pin highlights only. Do not turn red dimensions gold.
         if g>.6 and b>.6 and r<.4:return (217/255,154/255,0)
@@ -618,19 +675,43 @@ def cached_source(cfg,source,cache):
     stroke_profile=cfg.get('stroke_profile','source')
     require(profile in COLOR_PROFILES,'Unknown color profile')
     require(stroke_profile in STROKE_PROFILES,'Unknown stroke profile')
-    original=fitz.open(source)
+    original_sha=digest(source)
+    render_source=Path(source)
+    binding=object_exclusion_binding(cfg)
+    if binding:
+        from object_exclusion import validate_transform
+        ref=cfg['object_exclusion'];resolved=cfg.get('_object_exclusion',{})
+        derived=Path(resolved.get('derived_pdf_path') or
+                     resolve(Path(cfg['_manifest_path']).parent,ref['derived_pdf_path']))
+        ledger=Path(resolved.get('ledger_path') or
+                    resolve(Path(cfg['_manifest_path']).parent,ref['ledger_path']))
+        # Recheck before every cache lookup: a valid cached rendering never
+        # substitutes for proving the original-to-derived operation delta.
+        validation=validate_transform(source,derived,ledger,ref['source_sha256'],
+                                      ref['derived_sha256'],ref['ledger_sha256'])
+        cfg['_object_exclusion_validation']=validation
+        render_source=derived
+    render_source_sha=digest(render_source)
+    original=fitz.open(render_source)
     require(len(original)==cfg['source']['expected_pages'],'Page count changed; review all pages')
     require(len(original)==1,'This single-sheet command requires a reviewed one-page PDF; never silently drops pages')
     require(cfg['source']['page']==1,'One-page manifest page must equal 1')
     cache=Path(cache);cache.mkdir(parents=True,exist_ok=True)
-    key=hashlib.sha256(canonical({'sha':digest(source),'page':cfg['source']['page'],
+    key_input={'sha':original_sha,'page':cfg['source']['page'],
           'rotation':cfg['source']['rotation'],'version':VERSION,'engine':digest(__file__),
           'fitz':fitz.__version__,'renderer':cfg.get('renderer','auto'),
-          'color_profile':profile,'stroke_profile':stroke_profile})).hexdigest()[:24]
+          'color_profile':profile,'stroke_profile':stroke_profile}
+    if binding:
+        key_input.update({'render_source_sha256':render_source_sha,
+                          'object_exclusion':binding})
+    key=hashlib.sha256(canonical(key_input)).hexdigest()[:24]
     neutral=cache/(key+'-source.pdf');colored=cache/(key+'-blue.pdf');info=cache/(key+'.json')
     if neutral.exists() and colored.exists() and info.exists():
         old=json.loads(info.read_text())
-        if digest(neutral)==old['neutral_sha256'] and digest(colored)==old['colored_sha256']:
+        expected_meta={'source_sha256':original_sha,'render_source_sha256':render_source_sha,
+                       'object_exclusion':binding}
+        if (all(old.get(k)==v for k,v in expected_meta.items())
+                and digest(neutral)==old['neutral_sha256'] and digest(colored)==old['colored_sha256']):
             return neutral,colored,old['renderer'],True
     # Bake the explicitly inspected display rotation BEFORE source-coordinate clipping.
     p=original[0];p.set_rotation(cfg['source']['rotation']);p.remove_rotation()
@@ -649,7 +730,10 @@ def cached_source(cfg,source,cache):
         vec=fitz.open('svg',svg.encode());converted=fitz.open('pdf',vec.convert_to_pdf())
         converted.save(colored,garbage=4,deflate=True)
     info.write_text(json.dumps({'renderer':used,'neutral_sha256':digest(neutral),
-                                'colored_sha256':digest(colored)},indent=2))
+                                'colored_sha256':digest(colored),
+                                'source_sha256':original_sha,
+                                'render_source_sha256':render_source_sha,
+                                'object_exclusion':binding},indent=2))
     return neutral,colored,used,False
 
 
@@ -716,9 +800,12 @@ def check_geometry(cfg,source_page,source_pixels=None):
         effective=[]
         for box,text_value,size in spans:
             if covered_by(box,clips):
-                effective.append((size*float(group['scale']),text_value))
+                effective.append((size*float(group['scale']),text_value,size))
         minimum=min((x[0] for x in effective),default=None)
-        if minimum is not None:
+        # User rule 2026-09-25: when the supplier original itself is smaller than the floor,
+        # the floor becomes "never smaller than the original" (scale >= 1 for those spans).
+        floor_ok=all(e>=MIN_EFFECTIVE_FONT_PT-1e-6 or e>=src-1e-6 for e,_,src in effective)
+        if minimum is not None and not floor_ok:
             require(minimum>=MIN_EFFECTIVE_FONT_PT,
                     f'Effective technical text below {MIN_EFFECTIVE_FONT_PT:g}pt in {group["id"]}: {minimum:.2f}pt')
         source_quality.append({'id':group['id'],'clip_extra_ink_pixels':outside_count,
@@ -851,17 +938,25 @@ def source_coverage_preflight(cfg, source_page, source_pixels, ps):
         for field in authorized_fields:fill(covered,field['source_box'])
     unplaced_mask=weak_ink&interest&~covered
     unplaced=int(unplaced_mask.sum())
+    object_binding=object_exclusion_binding(cfg)
+    object_validation=cfg.get('_object_exclusion_validation') or cfg.get('_object_exclusion',{}).get('validation')
     return {"unplaced":unplaced,"unplaced_mask":unplaced_mask,
-            "exclusions":exclusion_audit,"authorized_fields":authorized_fields}
+            "exclusions":exclusion_audit,"authorized_fields":authorized_fields,
+            "object_exclusion_binding":object_binding,
+            "object_exclusion_validation":object_validation,
+            "coverage_basis":('original page coordinates; pixels rendered from the original-bound, '
+                'operation-verified source with only ledger-listed watermark Tj objects omitted'
+                if object_binding else 'original source page')}
 
 
 def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
-               expected_pixels=None,source_quality=None):
+               expected_pixels=None,source_quality=None,inventory_page=None):
     src=fitz.open(neutral);out=fitz.open(output)
     require(len(out)==1 and abs(out[0].rect.width-PAGE[0])<.1 and abs(out[0].rect.height-PAGE[1])<.1,
             'Output is not one landscape A4 page')
     a=render_array(src[0]) if source_pixels is None else source_pixels
-    coverage=source_coverage_preflight(cfg,src[0],a,ps)
+    coverage=source_coverage_preflight(cfg,
+        inventory_page if inventory_page is not None else src[0],a,ps)
     ink=a[:,:,:3].min(2)<150
     weak_ink=a[:,:,:3].min(2)<245
     unplaced=coverage['unplaced'];unplaced_mask=coverage['unplaced_mask']
@@ -1000,6 +1095,9 @@ def make_audit(cfg,neutral,colored,output,ps,assets,source_pixels=None,
     return {'pass':ok,'scope':'Raw source-table raster mismatch is retained in checks for approved reflow; only the source-bound English tolerance region uses field and approved-visual checks. Independent source/final review remains required.',
        'source_sha256':cfg['source']['sha256'],'output_sha256':digest(output),
        'inventory_sha256':inventory_hash(cfg),'source_inventory_sha256':source_inventory_hash(cfg),
+       'object_exclusion_binding':object_exclusion_binding(cfg),
+       'object_exclusion_validation':coverage['object_exclusion_validation'],
+       'source_coverage_basis':coverage['coverage_basis'],
        'source_unplaced_technical_ink_pixels':unplaced,
        'authorized_source_field_regions':authorized_fields,
        'title_model_text_present':title_ok,'frame_field_occurrences':field_counts,
@@ -1077,14 +1175,19 @@ def fit_inside(box,source_box,pad=6):
     return fitz.Rect(x,y,x+width,y+height)
 
 
-def make_review_pack(neutral,output,cfg,ps,audit,outdir,prefix='review'):
+def make_review_pack(neutral,output,cfg,ps,audit,outdir,prefix='review',
+                     source_review_doc=None):
     """Create two stable, single-look QA images and a hash-bound review template."""
-    outdir=Path(outdir);source_doc=fitz.open(neutral);output_doc=fitz.open(output)
+    outdir=Path(outdir)
+    source_doc=source_review_doc if source_review_doc is not None else fitz.open(neutral)
+    output_doc=fitz.open(output)
     colors=[(0.88,0.12,0.12),(0.05,0.45,0.82),(0.10,0.62,0.28),(0.72,0.25,0.78),
             (0.95,0.48,0.05),(0.05,0.68,0.68)]
     margin=25;header=42;gap=25;w=PAGE[0]*2+gap+margin*2;h=PAGE[1]+header+margin
     board=fitz.open();page=board.new_page(width=w,height=h)
-    page.insert_text((margin,24),'SOURCE - complete rotated page',fontsize=11,fontname='hebo')
+    source_heading=('SOURCE - original full page; exact object evidence attached'
+                    if source_review_doc is not None else 'SOURCE - complete rotated page')
+    page.insert_text((margin,24),source_heading,fontsize=11,fontname='hebo')
     page.insert_text((margin+PAGE[0]+gap,24),'OUTPUT - deterministic candidate',fontsize=11,fontname='hebo')
     left=fitz.Rect(margin,header,margin+PAGE[0],header+PAGE[1])
     right=fitz.Rect(margin+PAGE[0]+gap,header,margin+PAGE[0]*2+gap,header+PAGE[1])
@@ -1150,7 +1253,8 @@ def write_final_review_template(path,cfg,source,output,board,details):
            'inventory_sha256':inventory_hash(cfg),'review_board_sha256':digest(board),
            'review_details_sha256':digest(details),'reviewer':'','reviewer_run_id':'',
            'reviewer_role':'independent_final_reviewer','full_page_compared':False,
-           'verdict':'REVIEW','required_checks':FINAL_CHECKS,'checks':[]}
+           'verdict':'REVIEW','required_checks':FINAL_CHECKS,'checks':[],
+           'object_exclusion_binding':object_exclusion_binding(cfg)}
     save_json(path,value)
 
 
@@ -1167,6 +1271,9 @@ def write_provenance(outdir,cfg,manifest,source,assets,audit):
         'python':platform.python_version(),'pymupdf':fitz.__version__,'numpy':np.__version__,
         'source_sha256':digest(source),'manifest_sha256':digest(manifest),
         'source_inventory_sha256':source_inventory_hash(cfg),'inventory_sha256':inventory_hash(cfg),
+        'object_exclusion_binding':object_exclusion_binding(cfg),
+        'object_exclusion_validation':cfg.get('_object_exclusion_validation')
+            or cfg.get('_object_exclusion',{}).get('validation'),
         'asset_sha256':{key:digest(value) for key,value in assets.items()},
         'output_sha256':audit['output_sha256']})
 
@@ -1183,11 +1290,16 @@ def _build_generate(args):
     neutral,colored,renderer,hit=cached_source(cfg,source,cache)
     source_pixels,render_hit=cached_render(neutral,cache)
     n=fitz.open(neutral);ps,source_quality=check_geometry(cfg,n[0],source_pixels)
-    coverage=source_coverage_preflight(cfg,n[0],source_pixels,ps)
+    inventory_doc=source_inventory_page(source,cfg,n[0])
+    inventory_page=inventory_doc[0] if inventory_doc else n[0]
+    coverage=source_coverage_preflight(cfg,inventory_page,source_pixels,ps)
     save_json(outdir/'source-inventory-gate.json',{
         'status':'SOURCE_INVENTORY_PASS' if coverage['unplaced']==0 else 'SOURCE_INVENTORY_BLOCKED',
         'source_sha256':cfg['source']['sha256'],
         'scope':'complete_original_page',
+        'coverage_basis':coverage['coverage_basis'],
+        'object_exclusion_binding':coverage['object_exclusion_binding'],
+        'object_exclusion_validation':coverage['object_exclusion_validation'],
         'unplaced_technical_ink_pixels':coverage['unplaced'],
         'unplaced_regions':mask_components(coverage['unplaced_mask']),
         'authorized_source_field_regions':coverage['authorized_fields'],
@@ -1196,11 +1308,13 @@ def _build_generate(args):
     d,p=compose_document(cfg,colored,assets,ps);expected_pixels=render_array(p)
     output=outdir/'drawing.pdf';tmp=outdir/'candidate.pdf'
     d.save(tmp,garbage=4,deflate=True,deflate_fonts=True,deflate_images=True,use_objstms=1)
-    audit=make_audit(cfg,neutral,colored,tmp,ps,assets,source_pixels,expected_pixels,source_quality)
+    audit=make_audit(cfg,neutral,colored,tmp,ps,assets,source_pixels,expected_pixels,
+                     source_quality,inventory_page)
     audit['generation_seconds']=round(time.perf_counter()-start,3)
     audit['renderer']=renderer;audit['source_cache_hit']=hit
     audit['source_render_cache_hit']=render_hit
-    board,details=make_review_pack(neutral,tmp,cfg,ps,audit,outdir)
+    board,details=make_review_pack(neutral,tmp,cfg,ps,audit,outdir,
+                                   source_review_doc=inventory_doc)
     audit['review_board_sha256']=digest(board);audit['review_details_sha256']=digest(details)
     save_json(outdir/'audit.json',audit)
     require(audit['pass'],'Automatic preservation QA failed. candidate.pdf retained for diagnosis; no accepted drawing emitted')
@@ -1208,7 +1322,8 @@ def _build_generate(args):
     p.get_pixmap(matrix=fitz.Matrix(2,2),alpha=False).save(outdir/'preview.png')
     save_json(outdir/'layout.json',{'manifest_sha256':digest(mp),'source_sha256':digest(source),
         'output_sha256':digest(output),'source_inventory_sha256':source_inventory_hash(cfg),
-        'inventory_sha256':inventory_hash(cfg),'placements':ps,'fields':cfg['fields'],'renderer':renderer})
+        'inventory_sha256':inventory_hash(cfg),'object_exclusion_binding':object_exclusion_binding(cfg),
+        'placements':ps,'fields':cfg['fields'],'renderer':renderer})
     write_final_review_template(outdir/'final-review-template.json',cfg,source,output,board,details)
     write_provenance(outdir,cfg,mp,source,assets,audit)
     print(json.dumps({'status':'AUTO_QA_PASS_REQUIRES_VISUAL_REVIEW','pdf':str(output),'audit':str(outdir/'audit.json'),
@@ -1226,6 +1341,8 @@ def _draft_generate(args):
     neutral,colored,renderer,hit=cached_source(cfg,source,cache)
     source_pixels,render_hit=cached_render(neutral,cache)
     normalized=fitz.open(neutral)
+    inventory_doc=source_inventory_page(source,cfg,normalized[0])
+    inventory_page=inventory_doc[0] if inventory_doc else normalized[0]
     try:
         ps,source_quality=check_geometry(cfg,normalized[0],source_pixels)
     except ValueError as exc:
@@ -1235,10 +1352,12 @@ def _draft_generate(args):
     doc,page=compose_document(cfg,colored,assets,ps);expected_pixels=render_array(page)
     temp=outdir/'draft.tmp.pdf';output=outdir/'draft.pdf'
     doc.save(temp,garbage=4,deflate=True,deflate_fonts=True,deflate_images=True,use_objstms=1)
-    audit=make_audit(cfg,neutral,colored,temp,ps,assets,source_pixels,expected_pixels,source_quality)
+    audit=make_audit(cfg,neutral,colored,temp,ps,assets,source_pixels,expected_pixels,
+                     source_quality,inventory_page)
     audit['generation_seconds']=round(time.perf_counter()-start,3);audit['renderer']=renderer
     audit['source_cache_hit']=hit;audit['source_render_cache_hit']=render_hit
-    board,details=make_review_pack(neutral,temp,cfg,ps,audit,outdir,prefix='draft')
+    board,details=make_review_pack(neutral,temp,cfg,ps,audit,outdir,prefix='draft',
+                                   source_review_doc=inventory_doc)
     audit['review_board_sha256']=digest(board);audit['review_details_sha256']=digest(details)
     save_json(outdir/'draft-audit.json',audit)
     temp.replace(output);page.get_pixmap(matrix=fitz.Matrix(2,2),alpha=False).save(outdir/'draft-preview.png')
@@ -1501,57 +1620,6 @@ def reset_attempts(args):
         'attempts':0,'evidence_path':str(root/'batch-state.json')},ensure_ascii=False))
 
 
-def batch(args):
-    """Use the same project ledger and generation limits as direct entry points."""
-    spec_path=Path(args.jobs).resolve();spec=json.loads(spec_path.read_text())
-    if 'products' in spec:
-        from stable_batch import run_products
-        return run_products(args,spec,spec_path)
-    require(isinstance(spec.get('jobs'),list) and spec['jobs'],'Batch file needs a non-empty jobs list')
-    require(args.max_attempts==2,'The generation ceiling is fixed at two; --max-attempts cannot override it')
-    root=Path(args.output_root).resolve();root.mkdir(parents=True,exist_ok=True)
-    control=_control_path(args)
-    with _locked_state(control):pass  # Reject legacy ledger before any batch work.
-    ids=[str(job.get('id','')) for job in spec['jobs']]
-    require(all(re.fullmatch(r'[A-Za-z0-9._-]+',x) for x in ids),'Batch ids must be filesystem-safe')
-    require(len(ids)==len(set(ids)),'Batch ids must be unique')
-    pilots=[j for j in spec['jobs'] if j.get('pilot')]
-    require(pilots,'Batch needs at least one pilot; expansion cannot bypass the pilot gate')
-    ordered=pilots+[j for j in spec['jobs'] if not j.get('pilot')]
-    results=[]
-    for job in ordered:
-        manifest=resolve(spec_path.parent,job['manifest'])
-        ns=argparse.Namespace(manifest=str(manifest),output=None,cache=args.cache,
-                              control_root=args.control_root,allow_retry=args.allow_retry)
-        if job not in pilots and pilots:
-            with _locked_state(control) as state:
-                needed='DRAFT_QA_PASS' if args.mode=='draft' else 'RELEASE_READY'
-                ready=all(state['jobs'].get(p['id'],{}).get(args.mode,{}).get('status')==needed for p in pilots)
-                if not ready:
-                    _entry(state,job['id'],args.mode,{'status':'BLOCKED_PILOT_GATE'})
-                    _persist_state(control,state)
-            if not ready:
-                results.append(_result(job['id'],args.mode,'BLOCKED_PILOT_GATE',0,control/'batch-state.json'))
-                continue
-        try:
-            result=_run_stage(ns,args.mode,job['id'],
-                lambda n,recipe:root/job['id']/f'{recipe[:16]}-{args.mode}-a{n}')
-        except Exception as exc:
-            # Identity/source errors are preflight failures, not attempts.
-            result=_result(job['id'],args.mode,'PREFLIGHT_FAIL',0,control/'batch-state.json',
-                           error_category=type(exc).__name__)
-            with _locked_state(control) as state:
-                _entry(state,job['id'],args.mode,{'status':'PREFLIGHT_FAIL','attempts':0,
-                    'error_category':type(exc).__name__,'message':str(exc)})
-                state['events'].append({'record_id':job['id'],'stage':args.mode,'status':'PREFLIGHT_FAIL',
-                    'message':str(exc),'epoch':int(time.time())})
-                _persist_state(control,state)
-        result.pop('_error_message',None)
-        results.append(result)
-        print(json.dumps(result,ensure_ascii=False))
-    save_json(root/'job-summary.json',{'results':results,'state':str(control/'batch-state.json')})
-
-
 def verify(args):
     cfg,mp,source,assets=read_manifest(args.manifest)
     output=Path(args.pdf).resolve()
@@ -1559,15 +1627,19 @@ def verify(args):
     neutral,colored,_,_=cached_source(cfg,source,cache)
     source_pixels,_=cached_render(neutral,cache)
     doc=fitz.open(neutral);ps,source_quality=check_geometry(cfg,doc[0],source_pixels)
+    inventory_doc=source_inventory_page(source,cfg,doc[0])
+    inventory_page=inventory_doc[0] if inventory_doc else doc[0]
     expected_doc,_=compose_document(cfg,colored,assets,ps)
     audit=make_audit(cfg,neutral,colored,output,ps,assets,source_pixels,
-                     render_array(expected_doc[0]),source_quality)
+                     render_array(expected_doc[0]),source_quality,inventory_page)
     audit['visual_review_pass']=False
     if args.review:
         review=json.loads(Path(args.review).read_text())
         require(review.get('source_sha256')==digest(source) and review.get('output_sha256')==digest(output)
             and review.get('inventory_sha256')==inventory_hash(cfg),'Visual review evidence hash mismatch')
         require(review.get('verdict')=='PASS' and review.get('reviewer') and review.get('checks'), 'Incomplete visual review evidence')
+        require(review.get('object_exclusion_binding')==object_exclusion_binding(cfg),
+                'Final review object-exclusion binding differs from the reviewed manifest')
         require(review.get('reviewer_role')=='independent_final_reviewer',
                 'Final evidence must name an independent_final_reviewer')
         require(review.get('full_page_compared') is True,
@@ -1623,10 +1695,12 @@ def recheck_candidate(args):
     source_pixels,_=cached_render(neutral,cache)
     with fitz.open(neutral) as doc:
         ps,source_quality=check_geometry(cfg,doc[0],source_pixels)
+        inventory_doc=source_inventory_page(source,cfg,doc[0])
+        inventory_page=inventory_doc[0] if inventory_doc else None
     expected_doc,_=compose_document(cfg,colored,assets,ps)
     try:
         audit=make_audit(cfg,neutral,colored,output,ps,assets,source_pixels,
-                         render_array(expected_doc[0]),source_quality)
+                         render_array(expected_doc[0]),source_quality,inventory_page)
     finally:expected_doc.close()
     value={'product_id':cfg['identity']['record_id'],'stage':'candidate-recheck',
         'automatic_pass':audit['pass'],'independent_source_review':'REQUIRED',
@@ -1708,16 +1782,11 @@ def init(args):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     subs=parser.add_subparsers(dest='command',required=True)
-    from approved_recipe import register_cli
-    register_cli(subs)
     from source_fields import register_cli as register_source_fields_cli
     register_source_fields_cli(subs)
-    from portable_handoff import register_cli as register_handoff_cli
-    register_handoff_cli(subs)
     p=subs.add_parser('init');p.add_argument('source');p.add_argument('--manifest',required=True);p.add_argument('--model',required=True);p.add_argument('--rotation',type=int,choices=[0,90,180,270],required=True);p.set_defaults(func=init)
     p=subs.add_parser('draft');p.add_argument('manifest');p.add_argument('--output',required=True);p.add_argument('--cache');p.add_argument('--control-root',required=True);p.add_argument('--allow-retry',action='store_true');p.set_defaults(func=draft)
     p=subs.add_parser('build');p.add_argument('manifest');p.add_argument('--output',required=True);p.add_argument('--cache');p.add_argument('--control-root',required=True);p.add_argument('--allow-retry',action='store_true');p.set_defaults(func=build)
-    p=subs.add_parser('batch');p.add_argument('jobs');p.add_argument('--output-root',required=True);p.add_argument('--control-root',required=True);p.add_argument('--cache');p.add_argument('--mode',choices=['draft','build'],default='build');p.add_argument('--max-attempts',type=int,default=2);p.add_argument('--allow-retry',action='store_true');p.add_argument('--golden-ledger');p.add_argument('--catalog-dir');p.add_argument('--workers',type=int,default=1);p.add_argument('--runtime-126',help='Pinned Python with PyMuPDF 1.26.5 for exact legacy visual replay');p.set_defaults(func=batch)
     p=subs.add_parser('reset-attempts');p.add_argument('--control-root',required=True);p.add_argument('--record-id',required=True);p.add_argument('--source-sha256',required=True);p.add_argument('--stage',choices=['draft','build'],required=True);p.add_argument('--operator',required=True);p.add_argument('--reason',required=True);p.set_defaults(func=reset_attempts)
     p=subs.add_parser('verify');p.add_argument('manifest');p.add_argument('pdf');p.add_argument('--cache');p.add_argument('--review');p.add_argument('--report');p.set_defaults(func=verify)
     p=subs.add_parser('recheck-candidate');p.add_argument('manifest');p.add_argument('pdf');p.add_argument('--cache');p.add_argument('--report',required=True);p.set_defaults(func=recheck_candidate)
