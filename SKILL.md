@@ -101,6 +101,7 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 - **右栏加宽**：型号表太宽时，右栏可以向左加宽，最多到 x=524pt。
 - **原图字号小于 4.75pt 时**：下限改为"不比原图更小"。
 - **公差**：统一用英文疏排栏（`UNLESS OTHERWISE SPECIFIED, TOLERANCE:`）；有角度公差时排两列。
+- **外框不搬**：型号表等区块贴着供应商外框时，只搬到内框线为止，外框线和格子编号（A–F、1–8）不带进康生图；若切掉会丢内容，保持原样并标 `BLOCK_ENTERS_FRAME_BAND` 供人看。
 - **水印**：Autodesk 教育版水印文字对象会被精确删除。程序会验证其余 1000 多个矢量对象和全部文字都没有变化。
 
 ## 不变量

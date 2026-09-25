@@ -24,7 +24,7 @@ REVIEW_FLAGS = ('TABLE_TOO_WIDE_FOR_RAIL', 'TABLE_CONTAINS_GRAPHICS', 'EXCLUDED_
                 'PERFORMANCE_MERGED_WITH_GRAPHICS', 'FRAGMENTED_CLIP', 'SHARES_RULE_WITH_FURNITURE',
                 'INTERLEAVES_FURNITURE', 'BLOCK_ENTERS_TITLE_BLOCK', 'TABLE_FONT_TOO_SMALL_IN_RAIL',
                 'PERFORMANCE_DOES_NOT_FIT_RAIL', 'TEXT_ONLY_BLOCK', 'OUTLINED_TEXT_BLOCK', 'LINE_SPLIT',
-                'NEIGHBOR_DISPLACED', 'TEXT_MISSING_IN_OUTPUT')
+                'NEIGHBOR_DISPLACED', 'TEXT_MISSING_IN_OUTPUT', 'BLOCK_ENTERS_FRAME_BAND')
 CANDIDATES = (('single', ['--clip-mode', 'single']), ('multi', ['--clip-mode', 'multi']),
               ('relaxed', ['--clip-mode', 'multi', '--relaxed-rail']),
               ('multi-nofb', ['--clip-mode', 'multi', '--no-fallback']),

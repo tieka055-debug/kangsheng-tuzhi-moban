@@ -10,7 +10,7 @@ checks are the judge.  This script never writes review PASS values.
 """
 from __future__ import annotations
 
-import argparse, hashlib, json, math, re, sys, time, collections
+import argparse, os, hashlib, json, math, re, sys, time, collections
 from pathlib import Path
 
 import numpy as np
@@ -560,6 +560,44 @@ def analyse(src_path, family, work_dir, derived_note=None):
                         if changed_: break
             if len(clips) > 24:
                 flags.append(f'FRAGMENTED_CLIP:{b["kind"]}')
+            # never carry the supplier frame band (frame rules, zone letters/numbers): a block whose rules
+            # run on into the band is cut at the inner frame rule. Only straight rules may be cut; any other
+            # member ink beyond the rule keeps the old clip (and is flagged), so no content is ever dropped.
+            lim = fitz.Rect(interior.x0 - 0.7, interior.y0 - 0.7, interior.x1 + 0.7, interior.y1 + 0.7)
+            if any(not lim.contains(k) for k in clips):
+                cut = [k & lim for k in clips]
+                # the engine trims 0.5pt at every piece edge: drop pieces left with no ink inside that margin
+                cut = [k for k in cut if k.width > 1.2 and k.height > 1.2 and bool(
+                    _dark[int(math.ceil(k.y0 * 4)) + 2:int(math.floor(k.y1 * 4)) - 2,
+                          int(math.ceil(k.x0 * 4)) + 2:int(math.floor(k.x1 * 4)) - 2].any())]
+                lost = [m for m in own if not m.orient and not lim.contains(m.rect)
+                        and any(m.rect.intersects(k) for k in clips)]
+                def _ink(rs, within):
+                    m_ = np.zeros(_dark.shape, bool)
+                    for k in rs:
+                        k = k & within
+                        if k.is_empty or k.width <= 0 or k.height <= 0: continue
+                        m_[int(math.floor(k.y0 * 4)):int(math.ceil(k.y1 * 4)), int(math.floor(k.x0 * 4)):int(math.ceil(k.x1 * 4))] = True
+                    return m_ & _dark
+                # everything inside the inner frame rule that the old clips carried must still be carried
+                need_ = _ink(clips, interior); have_ = _ink(cut, interior)
+                if cut and not lost and not (need_ & ~have_).any():
+                    clips = cut
+                    rr_ = restored.get(id(b))
+                    if 'rextent' in b:
+                        u_ = bbox([Prim(k, 'x') for k in clips]); e_ = b['rextent'] & lim
+                        keep_ = 'x1' if (rr_ and rr_['orientation'] == 'vertical') else ('y1' if rr_ else None)
+                        for sd in ('x0', 'y0', 'x1', 'y1'):
+                            if sd != keep_: setattr(e_, sd, getattr(u_, sd))
+                        b['rextent'] = e_
+                    lx_ = b.get('rextent') or lim
+                    if rr_ and rr_['orientation'] == 'horizontal':
+                        rr_['x0'] = round(max(rr_['x0'], lx_.x0 + 0.05), 3); rr_['x1'] = round(min(rr_['x1'], lx_.x1 - 0.05), 3)
+                    elif rr_:
+                        rr_['y0'] = round(max(rr_['y0'], lx_.y0 + 0.05), 3); rr_['y1'] = round(min(rr_['y1'], lx_.y1 - 0.05), 3)
+                else:
+                    flags.append(f"BLOCK_ENTERS_FRAME_BAND:{b['kind']}")
+                    if os.environ.get("KS_DEBUG"): print("LOST", [(m.kind, m.orient, tuple(round(v,1) for v in m.rect)) for m in lost][:10])
             b['clips'] = clips
             b['clip'] = bbox([Prim(k, 'x') for k in clips])
             u = b['clip']; e = b.get('rextent', u)
