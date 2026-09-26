@@ -67,7 +67,7 @@ def long_lines(D, orient, min_len, lo=None, hi=None):
     return out
 
 
-def analyse(page):
+def analyse(page, furniture_frac=None):
     D = page.get_drawings()
     bb = fitz.Rect()
     for d in D: bb |= d['rect']
@@ -82,6 +82,10 @@ def analyse(page):
     # title block: horizontal rules that end on the inner right edge in the lower part -> stepped region
     h_all = long_lines(D, 'H', 0.08 * I.width)
     tol = 1.5
+    if furniture_frac:
+        furn = [fitz.Rect(I.x0 + a * I.width, I.y0 + b * I.height, I.x0 + c * I.width, I.y0 + d * I.height)
+                for a, b, c, d in furniture_frac]
+        return D, bb, I, furn
     V_all = long_lines(D, 'V', 6.0)
     def v_to_bottom(x):
         return any(abs(c - x) < tol and hi >= I.y1 - tol for lo, hi, c in V_all) or abs(x - I.x1) < tol
@@ -120,7 +124,10 @@ def inside_any(r, rects, pad=0.6):
 
 def run(job, out, font, font_index=0):
     src = fitz.open(job['source']); page = src[0]
-    D, bb, I, furn = analyse(page)
+    ff = job.get('furniture_frac')
+    if job.get('template'):
+        ff = json.loads((ROOT / 'families' / 'cad_templates.json').read_text())['templates'][job['template']]['furniture_frac']
+    D, bb, I, furn = analyse(page, ff)
     keep, dropped = [], collections.Counter()
     for d in D:
         r = d['rect']
