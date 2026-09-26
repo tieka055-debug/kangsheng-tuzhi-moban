@@ -152,24 +152,81 @@ def run(job, out, font, font_index=0):
         return GOLD
     cb = fitz.Rect()
     for d in keep: cb |= d['rect']
-    # uniform scale: content box into the Kangsheng frame, clear of the reserved title/tolerance area
-    avail = fitz.Rect(FRAME.x0 + 8, FRAME.y0 + 8, FRAME.x1 - 8, FRAME.y1 - 8)
-    s = min(avail.width / cb.width, avail.height / cb.height)
-    def tf(s_, ox, oy):
-        return fitz.Matrix(s_, 0, 0, s_, ox - cb.x0 * s_, oy - cb.y0 * s_)
+    # ---- blocks: cluster paths by proximity
+    g = 0.015 * cb.width
+    rects = [fitz.Rect(d['rect']) for d in keep]
+    par = list(range(len(rects)))
+    def f_(i):
+        while par[i] != i: par[i] = par[par[i]]; i = par[i]
+        return i
+    order = sorted(range(len(rects)), key=lambda i: rects[i].x0)
+    for ii, i in enumerate(order):     # sweep on x for speed
+        ri = rects[i]
+        for j in order[ii + 1:]:
+            rj = rects[j]
+            if rj.x0 > ri.x1 + g: break
+            if rj.y0 <= ri.y1 + g and ri.y0 <= rj.y1 + g: par[f_(j)] = f_(i)
+    groups = collections.defaultdict(list)
+    for i in range(len(keep)): groups[f_(i)].append(i)
+    blocks = []
+    for idx in groups.values():
+        r = fitz.Rect()
+        for i in idx: r |= rects[i]
+        blocks.append({'idx': idx, 'r': r})
+    # merge tiny fragments into the nearest bigger block
+    big = [b_ for b_ in blocks if b_['r'].width * b_['r'].height > 0.002 * cb.width * cb.height]
+    for b_ in blocks:
+        if b_ in big or not big: continue
+        near = min(big, key=lambda q: abs((q['r'].x0 + q['r'].x1) / 2 - (b_['r'].x0 + b_['r'].x1) / 2)
+                   + abs((q['r'].y0 + q['r'].y1) / 2 - (b_['r'].y0 + b_['r'].y1) / 2))
+        near['idx'] += b_['idx']; near['r'] |= b_['r']
+    blocks = big or blocks
+    # right column (notes / dimension table / parts list) -> Kangsheng right rail; the rest are views
+    split = cb.x0 + 0.58 * cb.width
+    def to_rail(r):
+        cx, cy = (r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2
+        if cx >= split: return True
+        # small marks in the top-right corner (e.g. a RoHS stamp) travel with the right column
+        return cx >= cb.x0 + 0.5 * cb.width and cy <= cb.y0 + 0.12 * cb.height and r.width * r.height < 0.01 * cb.width * cb.height
+    rail = [b_ for b_ in blocks if to_rail(b_['r'])]
+    views = [b_ for b_ in blocks if b_ not in rail]
+    if not views: views, rail = rail, []
+    mats = {}
+    RAIL = fitz.Rect(600, 38, 814, 444)
+    if rail:
+        # the right column moves as ONE unit (notes, tables and ordering diagrams keep their relative layout)
+        rb = fitz.Rect()
+        for b_ in rail: rb |= b_['r']
+        rw = RAIL.x1 - 524          # the rail may widen leftwards up to x=524 (same limit as the Zhiyuan rule)
+        sc = min(rw / rb.width, RAIL.height / rb.height)
+        x = RAIL.x1 - rb.width * sc; y = RAIL.y0
+        m_ = fitz.Matrix(sc, 0, 0, sc, x - rb.x0 * sc, y - rb.y0 * sc)
+        for b_ in rail:
+            for i in b_['idx']: mats[i] = (m_, sc)
+        rail_x0 = x - 10
+    else:
+        rail_x0 = FRAME.x1 - 8
+    # views keep their arrangement, enlarged uniformly into the left area, clear of the title block
+    vb = fitz.Rect()
+    for b_ in views: vb |= b_['r']
+    area = fitz.Rect(FRAME.x0 + 10, FRAME.y0 + 10, rail_x0, FRAME.y1 - 8)
+    s = min(area.width / vb.width, area.height / vb.height)
     placed = None
     while s > 0.2:
-        ox, oy = avail.x0 + (avail.width - cb.width * s) / 2, avail.y0
-        m = tf(s, ox, oy)
-        hit = any((d['rect'] * m).intersects(RESERVED) for d in keep)
-        if not hit: placed = (s, m); break
+        ox = area.x0 + (area.width - vb.width * s) / 2; oy = area.y0 + max(0, (area.height - vb.height * s) / 2)
+        m = fitz.Matrix(s, 0, 0, s, ox - vb.x0 * s, oy - vb.y0 * s)
+        if not any((rects[i] * m).intersects(RESERVED) for b_ in views for i in b_['idx']):
+            placed = (s, m); break
         s *= 0.98
     if placed is None: raise SystemExit('NO_ROOM')
     s, m = placed
+    for b_ in views:
+        for i in b_['idx']: mats[i] = (m, s)
     doc = fitz.open(); pg = doc.new_page(width=KF.PAGE[0], height=KF.PAGE[1])
     pg.insert_image(pg.rect, filename=str(ROOT / 'assets' / 'background.png'))
     sh = pg.new_shape()
-    for d in keep:
+    for n_, d in enumerate(keep):
+        m, s = mats[n_]
         for it in d['items']:
             k = it[0]
             if k == 'l': sh.draw_line(it[1] * m, it[2] * m)
@@ -179,7 +236,7 @@ def run(job, out, font, font_index=0):
         t = d['type']
         col = mapc(d.get('color')) if t in ('s', 'fs') else None
         fil = mapc(d.get('fill')) if t in ('f', 'fs') else None
-        w = max((d.get('width') or 0) * s, 0.28)
+        w = max((d.get('width') or 0) * s, 0.4)
         sh.finish(color=col, fill=fil, width=w, closePath=d.get('closePath', False),
                   even_odd=d.get('even_odd', False), lineCap=0, lineJoin=0)
     sh.commit()

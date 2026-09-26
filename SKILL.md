@@ -119,3 +119,18 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 
 1. 运行 `python -m unittest discover -s tests`。
 2. 在本机回归清单（私有，不放进仓库）上重跑，与上一版的分诊结果对比。**任何一张图变差，都不得合入。**
+
+## 非质源 CAD 矢量图（cad2pdf / DWG，文字为线条）
+
+```sh
+python pipeline/dwg_to_pdf.py 原图.dwg 原图.pdf            # 只有 DWG 时先转矢量 PDF（需要 LibreDWG 的 dwg2dxf 和 ezdxf）
+python pipeline/cad_family.py job.json --out 输出目录 --font 字体 [--font-index 0]
+```
+
+`job.json`：`{"source": "原图.pdf", "model": "型号", "title": "电池连接器", "template": "模板名", "tolerance": {...}}`
+
+- 图框模板在 `families/cad_templates.json`：用内框的相对比例写供应商标题栏和修订栏，不写单张坐标。
+- 排版：视图保持原图相对位置，整体等比放大放在左侧；右侧的说明、尺寸表、材料表、订购编码图作为一个整体放右栏（最宽到 x=524）。
+- 颜色：黑、灰、绿和原图主标注色转为康生蓝；其他彩色（端子、焊盘等重点）转为康生金。
+- 公差：照原图读出后写进 `tolerance`（可用尺寸段写法，例如 `UP TO 5 ±0.2`）。
+- 只有 PNG 图片的原图不做，先向供应商要 DWG 或 PDF。
