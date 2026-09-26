@@ -722,7 +722,24 @@ def layout(A, family):
             for step in range(0, 60):
                 trial = []; shrink = 1.0 - 0.025 * step
                 if shrink <= 0.1: break
-                if _layout_once(A, family, shrink, trial, gap):
+                best_m = None
+                # cheap feasibility test first: if even the free packer fails, shrink further
+                if not _layout_once(A, family, shrink, list(trial), gap, 'free'):
+                    if not perfs: break
+                    f = min((est_font(page, b) or 99) * b['scale'] for b in perfs)
+                    if f < perf_floor + 0.3: break
+                    continue
+                modes = [('rigid', 0)] + [(m, 0) for m in ('flow', 'flowdefer', 'flowsize', 'free')]
+                for mode in modes:
+                    tr = list(trial); A['_rigid_skip'] = mode[1]
+                    if _layout_once(A, family, shrink, tr, gap, mode[0]):
+                        v = order_violations(A)
+                        if best_m is None or v < best_m[0]: best_m = (v, mode)
+                        if v == 0: break
+                if best_m:
+                    A['_rigid_skip'] = best_m[1][1]
+                    _layout_once(A, family, shrink, trial, gap, best_m[1][0])
+                    A['layout_mode'] = best_m[1][0]; A['layout_order_violations'] = best_m[0]
                     done = True; break
                 if not perfs: break
                 f = min((est_font(page, b) or 99) * b['scale'] for b in perfs)
@@ -735,7 +752,24 @@ def layout(A, family):
     A['layout_perf_shrink'] = round(shrink, 3); A['layout_gap'] = gap
 
 
-def _layout_once(A, family, shrink, flags, gap):
+def order_violations(A):
+    """Pairs of views whose left/right (same row) or above/below (same column) relation flipped."""
+    vs = [b for b in A['blocks'] if b['kind'] not in ('table', 'performance')]
+    n = 0
+    for i, a in enumerate(vs):
+        for b in vs[i + 1:]:
+            ca, cb = a['clip'], b['clip']
+            pa = fitz.Rect(a['dst'][0], a['dst'][1], a['dst'][0] + ca.width, a['dst'][1] + ca.height)
+            pb = fitz.Rect(b['dst'][0], b['dst'][1], b['dst'][0] + cb.width, b['dst'][1] + cb.height)
+            if min(ca.y1, cb.y1) - max(ca.y0, cb.y0) > 0.3 * min(ca.height, cb.height):
+                if (ca.x0 < cb.x0) != (pa.x0 < pb.x0): n += 1
+            elif min(ca.x1, cb.x1) - max(ca.x0, cb.x0) > 0:
+                if (ca.y0 < cb.y0) != (pa.y0 < pb.y0): n += 1
+    return n
+
+
+def _layout_once(A, family, shrink, flags, gap, mode='rigid'):
+    rigid = mode == 'rigid'
     L = family['layout']; rail = fitz.Rect(L['rail'])
     page = A['page']
     tables = [b for b in A['blocks'] if b['kind'] == 'table']
@@ -796,8 +830,102 @@ def _layout_once(A, family, shrink, flags, gap):
         X, Y = int(round(rb['dst'][0])), int(round(rb['dst'][1]))
         hh = min(mz.shape[0], occ_ink.shape[0] - Y); ww = min(mz.shape[1], occ_ink.shape[1] - X)
         occ_ink[Y:Y + hh, X:X + ww] |= mz[:hh, :ww]
+    # ---- 1st choice: the whole source arrangement, gaps compressed uniformly (sizes stay 1:1).
+    #      Only views that still collide are moved individually (nearest free, order kept).
+    I0 = A['interior']
+    prep = []
+    for b in others:
+        c = b['clip']
+        x0, y0 = int(math.floor(c.x0)), int(math.floor(c.y0)); x1, y1 = int(math.ceil(c.x1)), int(math.ceil(c.y1))
+        sel = np.zeros((y1 - y0, x1 - x0), bool)
+        for k in b['clips']:
+            sel[int(math.floor(k.y0)) - y0:int(math.ceil(k.y1)) - y0, int(math.floor(k.x0)) - x0:int(math.ceil(k.x1)) - x0] = True
+        m = ink1[y0:y1, x0:x1] & sel
+        md = binary_dilation(m, iterations=gap) if m.any() else m
+        prep.append((b, x0, y0, sel, m, md))
+    def gap_map(spans, lo, f, min_gap=6.0):
+        # compress only the EMPTY bands between views (monotone, sizes 1:1 => no new overlaps)
+        iv = []
+        for a, b_ in sorted(spans):
+            if iv and a <= iv[-1][1]: iv[-1][1] = max(iv[-1][1], b_)
+            else: iv.append([a, b_])
+        out = []; cur = lo; prev = lo
+        for i, (a, b_) in enumerate(iv):
+            g = a - prev
+            ng = g * f if i == 0 else max(min(g, min_gap), g * f)
+            cur += ng; out.append((a, b_, cur)); cur += b_ - a; prev = b_
+        def m(x):
+            for a, b_, n in out:
+                if a - 1e-6 <= x <= b_ + 1e-6: return n + (x - a)
+            return x
+        return m
+    xs_sp = [(p_[1], p_[1] + p_[3].shape[1]) for p_ in prep]; ys_sp = [(p_[2], p_[2] + p_[3].shape[0]) for p_ in prep]
+    def try_rigid(fx, fy, tx, ty):
+        mx = gap_map(xs_sp, I0.x0, fx); my = gap_map(ys_sp, I0.y0, fy)
+        o = occ.copy(); oi = occ_ink.copy(); pos = {}; fails = []
+        for b, x0, y0, sel, m, md in sorted(prep, key=lambda t: -t[3].size):
+            h, w = m.shape
+            xx = int(round(frame_in.x0 + 3 + tx + mx(x0) - I0.x0)); yy = int(round(frame_in.y0 + 3 + ty + my(y0) - I0.y0))
+            if xx < frame_in.x0 or yy < frame_in.y0 or xx + w > frame_in.x1 or yy + h > frame_in.y1 \
+                    or (o[yy:yy + h, xx:xx + w] & md).any() or (oi[yy:yy + h, xx:xx + w] & sel).any():
+                fails.append(b); continue
+            pos[id(b)] = (xx, yy)
+            o[yy:yy + h, xx:xx + w] |= sel; oi[yy:yy + h, xx:xx + w] |= md
+        return fails, pos, o, oi
+    best = None
+    ks = [1.0, 0.8, 0.6, 0.45, 0.3, 0.15, 0.0]
+    combos = sorted(((kx, ky, tx, ty) for kx in ks for ky in ks for tx in (0, 12, 30) for ty in (0, 10)),
+                    key=lambda t: (-(t[0] + t[1]), t[2] + t[3]))
+    fallback = None
+    pinfo = {id(t[0]): t for t in prep}
+    for kx, ky, tx, ty in (combos if (rigid and others) else []):
+        fails, pos, o, oi = try_rigid(kx, ky, tx, ty)
+        key = (len(fails), -(kx + ky), abs(tx) + abs(ty))
+        if not fails: best = (key, kx, ky, tx, ty, fails, pos); break
+        if len(fails) == 1 and fallback is None:
+            # accept only if the one leftover view still has somewhere to go
+            _, x0f, y0f, self_, mf, mdf = pinfo[id(fails[0])]
+            hf, wf = mf.shape
+            c1 = fftconvolve(o.astype(np.float32), mdf[::-1, ::-1].astype(np.float32), mode='valid')
+            c2 = fftconvolve(oi.astype(np.float32), self_[::-1, ::-1].astype(np.float32), mode='valid')
+            yy_, xx_ = np.mgrid[0:c1.shape[0], 0:c1.shape[1]]
+            ins = (xx_ >= frame_in.x0) & (yy_ >= frame_in.y0) & (xx_ + wf <= frame_in.x1) & (yy_ + hf <= frame_in.y1)
+            if ((c1 < 0.5) & (c2 < 0.5) & ins).any(): fallback = (key, kx, ky, tx, ty, fails, pos)
+    if best is None: best = fallback
+    rigid_ok = best is not None and best[0][0] <= 1
+    if rigid_ok:
+        _, kx, ky, tx, ty, fails, pos = best
+        placed = []
+        for b, x0, y0, sel, m, md in prep:
+            if id(b) not in pos: continue
+            xx, yy = pos[id(b)]; c = b['clip']; h, w = m.shape
+            b['dst'] = (float(xx) + c.x0 - x0, float(yy) + c.y0 - y0); b['scale'] = 1.0; b['moved_pt'] = 0.0
+            occ[yy:yy + h, xx:xx + w] |= sel; occ_rect[yy:yy + h, xx:xx + w] |= sel
+            occ_ink[yy:yy + h, xx:xx + w] |= md
+            placed.append((c, fitz.Rect(b['dst'][0], b['dst'][1], b['dst'][0] + c.width, b['dst'][1] + c.height)))
+        others = [b for b in others if id(b) not in pos]
+        A['layout_rigid'] = {'kx': round(kx, 2), 'ky': round(ky, 2), 'moved': len(others)}
     ok = True
-    for b in sorted(others, key=lambda b: -b['clip'].width * b['clip'].height):
+    # keep the source arrangement: desired positions are the source positions mapped onto the Kangsheng
+    # frame, and every view keeps its left/right/above/below relation to views already placed
+    I_ = A['interior']
+    kx = min(1.0, (frame_in.width - 6) / max(I_.width, 1)); ky = min(1.0, (frame_in.height - 6) / max(I_.height, 1))
+    if not rigid_ok: placed = []   # (source clip, placed clip rect)
+    tgx = gap_map(xs_sp, I0.x0, 0.3); tgy = gap_map(ys_sp, I0.y0, 0.0)
+    def same_row(a, b_):
+        return min(a.y1, b_.y1) - max(a.y0, b_.y0) > 0.3 * min(a.height, b_.height)
+    if mode in ('free', 'flowsize'):  # size order
+        seq = sorted(others, key=lambda b: -b['clip'].width * b['clip'].height)
+    else:   # reading order: rows top->bottom, left->right inside a row
+        rows = []
+        for b in sorted(others, key=lambda b: b['clip'].y0):
+            for r_ in rows:
+                if any(same_row(b['clip'], o_['clip']) for o_ in r_): r_.append(b); break
+            else: rows.append([b])
+        seq = [b for r_ in rows for b in sorted(r_, key=lambda b: b['clip'].x0)]
+    deferred = set()
+    while seq:
+        b = seq.pop(0)
         c = b['clip']
         x0, y0 = int(math.floor(c.x0)), int(math.floor(c.y0)); x1, y1 = int(math.ceil(c.x1)), int(math.ceil(c.y1))
         sel = np.zeros((y1 - y0, x1 - x0), bool)
@@ -806,7 +934,10 @@ def _layout_once(A, family, shrink, flags, gap):
         m = ink1[y0:y1, x0:x1] & sel
         md = binary_dilation(m, iterations=gap) if m.any() else m
         h, w = m.shape
-        px, py = c.x0 + dx, c.y0 + dy
+        if mode == 'free':
+            px, py = frame_in.x0 + 3 + (c.x0 - I_.x0) * kx, frame_in.y0 + 3 + (c.y0 - I_.y0) * ky
+        else:   # empty bands of the source compressed: views pack towards the top-left, order kept
+            px, py = frame_in.x0 + 3 + tgx(x0) - I0.x0 + (c.x0 - x0), frame_in.y0 + 3 + tgy(y0) - I0.y0 + (c.y0 - y0)
         b['dst'] = (px, py); b['scale'] = 1.0; b.pop('moved_pt', None)
         # positions (integer top-left of the rasterised clip) whose dilated ink hits nothing occupied
         corr = fftconvolve(occ.astype(np.float32), md[::-1, ::-1].astype(np.float32), mode='valid')
@@ -816,7 +947,34 @@ def _layout_once(A, family, shrink, flags, gap):
         # the whole clip rectangle must stay inside the drawing frame
         ys, xs = np.mgrid[0:free.shape[0], 0:free.shape[1]]
         inside = (xs >= frame_in.x0) & (ys >= frame_in.y0) & (xs + w <= frame_in.x1) & (ys + h <= frame_in.y1)
-        cand = np.argwhere(free & inside)
+        allowed = free & inside
+        off_x0, off_y0 = c.x0 - x0, c.y0 - y0
+        T = 12.0
+        def constraints(wrap):
+            o_ = np.ones_like(allowed)
+            if mode == 'free': return o_
+            row_bottom = None
+            for sc_, pc_ in placed:
+                hov = min(c.x1, sc_.x1) - max(c.x0, sc_.x0) > 0
+                if same_row(c, sc_):
+                    if wrap:
+                        row_bottom = max(row_bottom or 0, pc_.y1)
+                    elif c.x1 <= sc_.x0 + 5: o_ &= (xs + off_x0 + c.width <= pc_.x0 + T)
+                    elif c.x0 >= sc_.x1 - 5: o_ &= (xs + off_x0 >= pc_.x1 - T)
+                elif hov and c.y0 >= sc_.y1 - 5: o_ &= (ys + off_y0 >= pc_.y1 - T)
+                elif hov and c.y1 <= sc_.y0 + 5: o_ &= (ys + off_y0 + c.height <= pc_.y0 + T)
+            if row_bottom is not None: o_ &= (ys + off_y0 >= row_bottom - T)
+            return o_
+        cand = np.argwhere(allowed & constraints(False))
+        if cand.size == 0 and mode == 'flowdefer' and id(b) not in deferred:
+            # a view that has to leave its row goes last, after the rows below are laid out
+            deferred.add(id(b)); seq.append(b); continue
+        if cand.size == 0:
+            cand = np.argwhere(allowed & constraints(True))
+            if cand.size: flags.append('LAYOUT_ROW_WRAPPED')
+        if cand.size == 0:
+            cand = np.argwhere(allowed)
+            if cand.size and mode != 'free': flags.append('LAYOUT_ORDER_RELAXED')
         if cand.size == 0:
             flags.append(f'NO_FREE_SPACE_FOR_{b["kind"].upper()}'); ok = False; continue
         d = (cand[:, 1] - px) ** 2 + (cand[:, 0] - py) ** 2
@@ -828,6 +986,7 @@ def _layout_once(A, family, shrink, flags, gap):
         occ_ink[yy:yy + h, xx:xx + w] |= binary_dilation(m, iterations=gap) if m.any() else m
         occ[yy:yy + h, xx:xx + w] |= sel
         b['moved_pt'] = round(math.hypot(xx + off_x - px, yy + off_y - py), 1)
+        placed.append((c, fitz.Rect(xx + off_x, yy + off_y, xx + off_x + c.width, yy + off_y + c.height)))
 
     t = A['tol_clip']; s = min(1.0, (TOL_BOX.width - 3) / t.width, (TOL_BOX.height - 3) / t.height)
     A['tol'] = {'dst': (TOL_BOX.x0 + (TOL_BOX.width - t.width * s) / 2, TOL_BOX.y0 + 1.5), 'scale': s}
