@@ -123,7 +123,20 @@ def inside_any(r, rects, pad=0.6):
 
 
 def run(job, out, font, font_index=0):
-    src = fitz.open(job['source']); page = src[0]
+    src_path = job['source']
+    probe = fitz.open(src_path)
+    if probe[0].get_text('words'):
+        # live text: convert glyphs to outlines so every character is carried as vector ink
+        import subprocess, tempfile
+        ol = Path(tempfile.mkdtemp()) / 'outlined.pdf'
+        subprocess.run(['gs', '-q', '-dNOPAUSE', '-dBATCH', '-dNoOutputFonts', '-sDEVICE=pdfwrite',
+                        '-dFirstPage=1', '-dLastPage=1', f'-sOutputFile={ol}', src_path], check=True)
+        src_path = str(ol)
+    src = fitz.open(src_path); page = src[0]
+    if job.get('rotate'):
+        page.set_rotation((page.rotation + int(job['rotate'])) % 360)
+    if page.rotation:
+        page.remove_rotation()   # work in the upright drawing orientation
     ff = job.get('furniture_frac')
     if job.get('template'):
         ff = json.loads((ROOT / 'families' / 'cad_templates.json').read_text())['templates'][job['template']]['furniture_frac']
@@ -137,6 +150,32 @@ def run(job, out, font, font_index=0):
             dropped['frame_rule'] += 1; continue
         if inside_any(r, furn):
             dropped['title_or_rev'] += 1; continue
+        # a path may mix drawing strokes with supplier-frame strokes: drop the individual items that
+        # lie wholly inside a supplier title/revision area (both ends of a line inside)
+        if furn and len(d['items']) > 1:
+            def pts(it):
+                if it[0] == 'l': return [it[1], it[2]]
+                if it[0] == 'c': return [it[1], it[4]]
+                if it[0] == 're': return [it[1].tl, it[1].br]
+                if it[0] == 'qu': return [it[1].ul, it[1].lr]
+                return []
+            def inside(pt):
+                return any(fitz.Rect(q.x0 - 0.6, q.y0 - 0.6, q.x1 + 0.6, q.y1 + 0.6).contains(pt) for q in furn)
+            its = [it for it in d['items'] if not (pts(it) and all(inside(p_) for p_ in pts(it)))]
+            if not its:
+                dropped['title_or_rev'] += 1; continue
+            if len(its) != len(d['items']):
+                d = dict(d); d['items'] = its
+                rr = fitz.Rect()
+                for it in its:
+                    for p_ in pts(it): rr |= fitz.Rect(p_, p_)
+                d['rect'] = rr
+                dropped['title_items'] += 1
+        elif furn and len(d['items']) == 1 and d['items'][0][0] == 'l':
+            a_, b_ = d['items'][0][1], d['items'][0][2]
+            if any(fitz.Rect(q.x0 - 0.6, q.y0 - 0.6, q.x1 + 0.6, q.y1 + 0.6).contains(a_) and
+                   fitz.Rect(q.x0 - 0.6, q.y0 - 0.6, q.x1 + 0.6, q.y1 + 0.6).contains(b_) for q in furn):
+                dropped['title_or_rev'] += 1; continue
         keep.append(d)
     if not keep: raise SystemExit('NOTHING_TO_PLACE')
     # colours: neutral + the dominant annotation colour -> blue; every other colour -> gold
@@ -181,6 +220,14 @@ def run(job, out, font, font_index=0):
                    + abs((q['r'].y0 + q['r'].y1) / 2 - (b_['r'].y0 + b_['r'].y1) / 2))
         near['idx'] += b_['idx']; near['r'] |= b_['r']
     blocks = big or blocks
+    # a block made only of one or two straight lines is a stray piece of the supplier frame
+    def stray(b_):
+        its = [it for i in b_['idx'] for it in keep[i]['items']]
+        return all(it[0] == 'l' for it in its) and (len(its) <= 2 or (len(its) <= 6 and min(b_['r'].width, b_['r'].height) < 2.0))
+    if len(blocks) > 1:
+        blocks = [b_ for b_ in blocks if not stray(b_)]
+        cb = fitz.Rect()
+        for b_ in blocks: cb |= b_['r']
     # right column (notes / dimension table / parts list) -> Kangsheng right rail; the rest are views
     split = cb.x0 + 0.58 * cb.width
     def to_rail(r):
@@ -199,11 +246,14 @@ def run(job, out, font, font_index=0):
         for b_ in rail: rb |= b_['r']
         rw = RAIL.x1 - 524          # the rail may widen leftwards up to x=524 (same limit as the Zhiyuan rule)
         sc = min(rw / rb.width, RAIL.height / rb.height)
+        uni = min((FRAME.width - 20) / cb.width, (FRAME.height - 20) / cb.height)
+        if sc < 0.6 * uni:   # rail would shrink the notes/tables more than the whole sheet would: keep sheet layout
+            views, rail = views + rail, []
         x = RAIL.x1 - rb.width * sc; y = RAIL.y0
         m_ = fitz.Matrix(sc, 0, 0, sc, x - rb.x0 * sc, y - rb.y0 * sc)
         for b_ in rail:
             for i in b_['idx']: mats[i] = (m_, sc)
-        rail_x0 = x - 10
+        rail_x0 = x - 10 if rail else FRAME.x1 - 8
     else:
         rail_x0 = FRAME.x1 - 8
     # views keep their arrangement, enlarged uniformly into the left area, clear of the title block
@@ -226,6 +276,7 @@ def run(job, out, font, font_index=0):
     pg.insert_image(pg.rect, filename=str(ROOT / 'assets' / 'background.png'))
     sh = pg.new_shape()
     for n_, d in enumerate(keep):
+        if n_ not in mats: continue
         m, s = mats[n_]
         for it in d['items']:
             k = it[0]
