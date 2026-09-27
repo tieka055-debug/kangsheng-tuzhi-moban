@@ -11,7 +11,7 @@
   python pipeline/cad_family.py job.json --out 输出目录 --font 字体 [--font-index N]
 job.json: {"source": "原图.pdf", "model": "...", "title": "...", "tolerance": {...engine schema...}}
 """
-import argparse, collections, json, math, sys
+import os, argparse, collections, json, math, sys
 from pathlib import Path
 import pymupdf as fitz
 
@@ -181,10 +181,8 @@ def run(job, out, font, font_index=0):
                 dropped['title_or_rev'] += 1; continue
             if len(its) != len(d['items']):
                 d = dict(d); d['items'] = its
-                rr = fitz.Rect()
-                for it in its:
-                    for p_ in pts(it): rr |= fitz.Rect(p_, p_)
-                d['rect'] = rr
+                P_ = [p_ for it in its for p_ in pts(it)]
+                d['rect'] = fitz.Rect(min(q.x for q in P_), min(q.y for q in P_), max(q.x for q in P_), max(q.y for q in P_))
                 dropped['title_items'] += 1
         elif furn and len(d['items']) == 1 and d['items'][0][0] == 'l':
             a_, b_ = d['items'][0][1], d['items'][0][2]
@@ -193,6 +191,46 @@ def run(job, out, font, font_index=0):
                 dropped['title_or_rev'] += 1; continue
         keep.append(d)
     if not keep: raise SystemExit('NOTHING_TO_PLACE')
+    # a table standing on the supplier title block shares its bottom rule with the block: when three or more
+    # kept vertical rules end on a removed area's top edge, redraw the bottom rule between them
+    for q in furn:
+        ends = []
+        for d in keep:
+            for it in d['items']:
+                if it[0] != 'l' or abs(it[1].x - it[2].x) > 0.3: continue
+                yb = max(it[1].y, it[2].y)
+                if abs(yb - q.y0) < 1.0 and q.x0 - 0.6 <= it[1].x <= q.x1 + 0.6 and abs(it[1].y - it[2].y) > 2: ends.append((it[1].x, yb, d))
+        hrules = [(min(it[1].x, it[2].x), max(it[1].x, it[2].x), it[1].y) for d in keep for it in d['items']
+                  if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3]
+        groups = []
+        for yb in sorted({round(e[1] * 2) / 2 for e in ends}):
+            row = sorted((e for e in ends if abs(e[1] - yb) < 0.6), key=lambda e: e[0])
+            cur = row[:1]
+            for a_, b_ in zip(row, row[1:]):   # neighbouring columns must be tied together by a row rule of the table
+                if any(h[0] <= a_[0] + 0.6 and h[1] >= b_[0] - 0.6 and yb - 60 < h[2] < yb - 1 for h in hrules): cur.append(b_)
+                else: groups.append(cur); cur = [b_]
+            if cur: groups.append(cur)
+        for grp in groups:
+            if len(grp) < 3: continue
+            x0 = min(e[0] for e in grp); x1 = max(e[0] for e in grp); src_ = grp[0][2]; yb_ = grp[0][1]
+            # the table's row rules may run past the outer columns (their border was the supplier frame): follow them
+            rows = [(min(it[1].x, it[2].x), max(it[1].x, it[2].x), it[1].y) for d in keep for it in d['items']
+                    if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3 and yb_ - 60 < it[1].y < yb_ - 1
+                    and min(it[1].x, it[2].x) <= x0 + 0.6 and max(it[1].x, it[2].x) >= x1 - 0.6]   # full-width row rules only
+            new_items = []
+            for side in (0, 1):
+                ends = [r_[side] for r_ in rows]
+                if not ends: continue
+                far = min(ends) if side == 0 else max(ends)
+                same = [r_ for r_ in rows if abs(r_[side] - far) < 0.6]
+                if len(same) >= 2 and (far < x0 - 1 if side == 0 else far > x1 + 1):
+                    new_items.append(('l', fitz.Point(far, min(r_[2] for r_ in same)), fitz.Point(far, yb_)))
+                    if side == 0: x0 = far
+                    else: x1 = far
+            new_items.append(('l', fitz.Point(x0, yb_), fitz.Point(x1, yb_)))
+            keep.append({'items': new_items, 'type': 's', 'color': src_.get('color'), 'width': src_.get('width'),
+                         'closePath': False, 'rect': fitz.Rect(x0, min(min(i_[1].y, i_[2].y) for i_ in new_items) - 0.01, x1, yb_ + 0.01)})
+            dropped['table_base_restored'] += 1
     # colours: neutral + the dominant annotation colour -> blue; every other colour -> gold
     cnt = collections.Counter()
     for d in keep:
@@ -233,8 +271,11 @@ def run(job, out, font, font_index=0):
     big = [b_ for b_ in blocks if b_['r'].width * b_['r'].height > 0.002 * cb.width * cb.height]
     for b_ in blocks:
         if b_ in big or not big: continue
-        near = min(big, key=lambda q: abs((q['r'].x0 + q['r'].x1) / 2 - (b_['r'].x0 + b_['r'].x1) / 2)
-                   + abs((q['r'].y0 + q['r'].y1) / 2 - (b_['r'].y0 + b_['r'].y1) / 2))
+        def gap(q, r=b_['r']):   # edge-to-edge distance first (0 when touching), centre distance breaks ties
+            dx = max(q['r'].x0 - r.x1, r.x0 - q['r'].x1, 0); dy = max(q['r'].y0 - r.y1, r.y0 - q['r'].y1, 0)
+            return (dx + dy, abs((q['r'].x0 + q['r'].x1) / 2 - (r.x0 + r.x1) / 2)
+                    + abs((q['r'].y0 + q['r'].y1) / 2 - (r.y0 + r.y1) / 2))
+        near = min(big, key=gap)
         near['idx'] += b_['idx']; near['r'] |= b_['r']
     blocks = big or blocks
     # a block made only of one or two straight lines is a stray piece of the supplier frame
@@ -245,6 +286,29 @@ def run(job, out, font, font_index=0):
         blocks = [b_ for b_ in blocks if not stray(b_)]
         cb = fitz.Rect()
         for b_ in blocks: cb |= b_['r']
+    # a caption (short, flat block) sitting right under a drawing belongs to it, e.g. "P.C.B LAYOUT / TOLERANCE"
+    if len(blocks) > 1:
+        for b_ in sorted(blocks, key=lambda q: q['r'].height):
+            r = b_['r']
+            if r.height > 0.06 * cb.height or b_ not in blocks: continue
+            def close_above(q):   # some path of q sits just above the caption and overlaps it horizontally
+                return any(0 <= r.y0 - rects[i].y1 < 0.03 * cb.height and min(r.x1, rects[i].x1) - max(r.x0, rects[i].x0) > 0.3 * r.width
+                           for i in q['idx'])
+            above = [q for q in blocks if q is not b_ and close_above(q)]
+            if above:
+                q = above[0]
+                q['idx'] += b_['idx']; q['r'] |= r; blocks.remove(b_)
+    if os.environ.get('CAD_DEBUG'):
+        for b_ in blocks:
+            print('BLOCK', [round(v, 1) for v in b_['r']], len(b_['idx']), file=sys.stderr)
+            if os.environ.get('CAD_DEBUG') == '2':
+                for i in b_['idx']:
+                    if rects[i].x1 > 480 and rects[i].y1 > 300: print('   ', [round(v, 1) for v in rects[i]], len(keep[i]['items']), file=sys.stderr)
+        print('CB', [round(v, 1) for v in cb], file=sys.stderr)
+        for d in keep:
+            if len(d['items']) == 2 and all(it[0] == 'l' for it in d['items']) and d['rect'].width > 20 and d['rect'].height > 20:
+                print('  L', [round(v, 1) for v in d['rect']], file=sys.stderr)
+        print('I', [round(v, 1) for v in I], [[round(v, 1) for v in q] for q in furn], file=sys.stderr)
     # right column (notes / dimension table / parts list) -> Kangsheng right rail; the rest are views
     split = cb.x0 + 0.58 * cb.width
     def to_rail(r):
@@ -264,7 +328,7 @@ def run(job, out, font, font_index=0):
         rw = RAIL.x1 - 524          # the rail may widen leftwards up to x=524 (same limit as the Zhiyuan rule)
         sc = min(rw / rb.width, RAIL.height / rb.height)
         uni = min((FRAME.width - 20) / cb.width, (FRAME.height - 20) / cb.height)
-        if sc < 0.6 * uni:   # rail would shrink the notes/tables more than the whole sheet would: keep sheet layout
+        if sc < 0.6 * uni or job.get('layout') == 'sheet':   # rail would shrink the notes/tables more than the whole sheet would: keep sheet layout
             views, rail = views + rail, []
         x = RAIL.x1 - rb.width * sc; y = RAIL.y0
         m_ = fitz.Matrix(sc, 0, 0, sc, x - rb.x0 * sc, y - rb.y0 * sc)
