@@ -1,6 +1,6 @@
 ---
 name: kangsheng-tuzhi-moban
-description: 把质源供应商的单页矢量 PDF 工程图批量转成康生品牌图纸。程序自动算出全部裁切和排版，引擎门禁保证内容零遗漏；每张只需读一次公差格小图、看一眼对照图。
+description: 把供应商的连接器工程图（质源单页矢量 PDF、其他供应商的 cad2pdf/DWG）批量转成康生品牌图纸，并回填飞书。程序自动裁切排版；每张只需选模板、读一次公差、看一眼对照图。
 ---
 
 # 康生图纸：自动出图（第 2 版，2026-09-25）
@@ -120,22 +120,58 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 1. 运行 `python -m unittest discover -s tests`。
 2. 在本机回归清单（私有，不放进仓库）上重跑，与上一版的分诊结果对比。**任何一张图变差，都不得合入。**
 
-## 非质源 CAD 矢量图（cad2pdf / DWG，文字为线条）
+## 通用 CAD 路线（非质源供应商，或质源自动流程做不出来的图）
 
-```sh
-python pipeline/dwg_to_pdf.py 原图.dwg 原图.pdf            # 只有 DWG 时先转矢量 PDF（需要 LibreDWG 的 dwg2dxf 和 ezdxf）
-python pipeline/cad_family.py job.json --out 输出目录 --font 字体 [--font-index 0]
-```
+适用：cad2pdf 导出的 PDF（文字是线条）、DWG、带文字层的 CAD PDF。**每张图的判断只有 4 件事：选模板、读公差、定型号名、看对照图。** 不写坐标。
 
-`job.json`：`{"source": "原图.pdf", "model": "型号", "title": "电池连接器", "template": "模板名", "tolerance": {...}}`
+### 步骤
 
-- 图框模板在 `families/cad_templates.json`：用内框的相对比例写供应商标题栏和修订栏，不写单张坐标。
-- 排版：视图保持原图相对位置，整体等比放大放在左侧；右侧的说明、尺寸表、材料表、订购编码图作为一个整体放右栏（最宽到 x=524）。
-- 颜色：黑、灰、绿和原图主标注色转为康生蓝；其他彩色（端子、焊盘等重点）转为康生金。
-- 公差：照原图读出后写进 `tolerance`（可用尺寸段写法，例如 `UP TO 5 ±0.2`）。
-- 只有 PNG 图片的原图不做，先向供应商要 DWG 或 PDF。
-- 一个 DWG 里横排/竖排画了多张图：先 `python pipeline/split_sheets.py 原图.pdf 拆分目录` 拆成单张，再逐张做；报 `WIDE_SEGMENT` 的段是两张图框贴在一起，人工定切分位置。拆出的顺序要和飞书里 2D 图的顺序逐张核对。
-- 一页里并排画了几张图（cad2pdf 常见）：不用拆文件，在 job 里加 `clip: [x0,y0,x1,y1]` 指定这一张的范围。
-- 可选键：`frame_bottom`（`title_top`：标题栏整宽时内框底边取标题栏顶线；`inner_ring`：取外框往里的第二条线），`dominant_colour`（同一系列多张图固定哪种颜色转蓝，保证整套配色一致）。
-- 质源 CAD 图（带「由 Autodesk 教育版产品制作」水印的质源图框）用模板 `Z_zhiyuan_cad`；cad2pdf 文字为线条的版本用 `Z_zhiyuan_cad2`。原图左下的零件/尺寸表会放到康生标题栏左边的空位（模板里 `bottom_slot`）。自动流程（run_batch）做不出来的质源图，改走这条路。
-- 某张图 DWG 转换后文字/表格缺失（与同系列其他张对比能看出），该张不出图，报给人处理，不从别的型号抄。
+1. **拿到矢量原图。** 飞书「原始」字段里的 DWG/PDF。只有 PNG/JPG 或扫描 PDF（`page.get_drawings()` 为空）→ 不做，备注「缺原图」。
+   DWG 先转：`python pipeline/dwg_to_pdf.py 原图.dwg 原图.pdf`（需要 LibreDWG 的 `dwg2dxf` 和 `ezdxf`）。
+2. **一页里有几张图？**
+   - 横排/竖排多张（DWG 常见）：`python pipeline/split_sheets.py 原图.pdf 拆分目录` 拆成单张。报 `WIDE_SEGMENT` 的是两张图框贴在一起，看一眼再定切分位置。
+   - cad2pdf 一页并排两张：不拆，job 里加 `"clip": [x0,y0,x1,y1]`。
+   - 拆出的每张要和飞书 2D 图逐张对上（图名、Pin 数），顺序不能想当然。
+3. **选模板。** 按下表的图框描述选；拿不准就先用 `tools/grid_preview.py 原图.pdf 预览.png` 看网格。都不像 → 新建模板（见下）。
+4. **读公差。** 放大原图的公差格（例如 `page.get_pixmap(dpi=600, clip=...)`），逐行照抄到 `tolerance`。字体不支持的符号（如 `≤`、`∠`）改写成 `0~5`、`ANG`，数值不变。
+5. **写 job.json 并运行：**
+   ```json
+   {"source": "原图.pdf", "model": "型号", "title": "电池连接器", "template": "模板名",
+    "tolerance": {"linear_tolerances": [{"tier": "X.", "value": "±0.3"}], "angular_tolerances": [{"tier": "ANGLE", "value": "±3°"}], "additional_tolerance_conditions": []}}
+   ```
+   ```sh
+   python pipeline/cad_family.py job.json --out 输出目录 --font 字体 [--font-index 0]
+   ```
+   可选键：`rotate`（原图横放时 90/270）、`clip`、`frame_bottom`（`title_top`：标题栏整宽时内框底边取标题栏顶线；`inner_ring`：取外框往里第二条线）、`dominant_colour`（例如 `[1,0,0]`：指定哪种颜色当标注色转蓝；同系列多张图要统一）、`furniture_frac`（临时覆盖模板）。
+6. **看图。** 打开 `*-原图对照.png`，逐项核对：视图、尺寸、说明/材料、型号表、PCB 布局都在；没有残留供应商标题栏/修订栏/RoHS；没有多余的长线；标注是蓝色、端子/焊盘等重点是金色。
+   有问题先查原因（模板比例、`frame_bottom`、`dominant_colour`），不要为单张图改代码。
+7. **回填飞书：** `python tools/feishu_backfill.py --base … --table … --field … --plan plan.json`（只追加，按 2D 图名核对，回读校验）。
+   缺图/原图损坏的记录：`python tools/feishu_note.py --base … --table … --notes notes.json`（在「备注」后面追加说明，不改原内容）。
+   base/table/字段 ID 属于业务数据，运行时传参，不写进仓库。
+
+### 图框模板（`families/cad_templates.json`）
+
+| 模板 | 图框 |
+|---|---|
+| `A_letter_frame_parts_table` | 字母列头外框，底部整条标题栏，右上 SYMBOL/REVISION 修订栏（Y.C.Zhang 款）；RoHS 标记一并去掉（用户 2026-09-26 要求） |
+| `B_yellow_grid_wjh` | 黄色 1–7 格外框，右下阶梯标题栏，右上 REV/DESCRIPTION 修订栏（W.J.H 款） |
+| `A_rohs_top_left` | A 款变体：RoHS 标记在左上角（诺德/BG 系列） |
+| `K_ktl_structure` | 凯拓林「结构图面」：右下 QUALITY/TOLERANCE 标题栏，右上「结构图面」+ 修订栏，左上 RoHS |
+| `N_nd_letter` | 诺德/康生旧款：字母列头外框，底部整条公司名标题栏，右上 SYMBOL/REVISION 修订栏，左上 RoHS |
+| `N_nd_dwg_sheet` | 诺德/北冠 DWG 多图单页：字母列头外框，底部标题栏+公司名在内框外，左上 RoHS，右上 SYMBOL/REVISION 修订栏；零件表保留（需 frame_bottom=title_top） |
+| `N_nd_dwg_tall` | 诺德 DWG 单页（标题栏整宽横线，需 frame_bottom=inner_ring）：RoHS 与修订栏并排在右上，底部公司名+标题栏 |
+| `BG_dwg_sheet` | BG DWG 多图单页：右上 SYMBOL/REVISION 修订栏，左上 RoHS，底部标题栏在内框外（需 frame_bottom=title_top） |
+| `Z_zhiyuan_cad` | 质源 CAD 图框（横向阅读）：右下标题栏+公差栏；四边「由 Autodesk 教育版产品制作」水印；左下零件/尺寸表保留 |
+| `Z_zhiyuan_cad2` | 质源 CAD 图框（cad2pdf 文字为线条的版本，标题栏略低）：同 Z_zhiyuan_cad |
+| `D_dingduan` | 鼎端电子图框：右上 REV 修订栏，右下标题栏+公司 logo，左下 Recommended P.C.B Layout 说明保留 |
+| `N_nd_cad2pdf` | 诺德 cad2pdf 图框（字母列头 F…A，右上 RoHS+修订栏，底部整条公司名/标题栏）；一页多图时用 job 的 clip 指定单张 |
+
+**新建模板：** 用 `tools/grid_preview.py` 看网格，把供应商标题栏、修订栏、RoHS、水印等区域按内框的比例写成 `furniture_frac: [[x0,y0,x1,y1], ...]`（0–1）。同一供应商同一图框只写一次。
+
+### 处理原则
+
+- 颜色：黑/灰/绿和主标注色 → 康生蓝；其他彩色（端子、焊盘）→ 康生金。
+- 排版：视图保持原图相对位置，整体等比放大；右侧说明/尺寸表/材料表作为一个整体放右栏（最宽到 x=524）。
+- 原图写错的（尺寸表删除线、数量和 Pin 数不符等）照原样保留，报给人核对，不自行改。
+- DWG 转换后某张图的文字/表格缺失（和同系列其他张对比能看出），这张不出图，备注「原图损坏，请供应商重发」。**不从别的型号抄。**
+- 改了 `cad_family.py` 或模板：把以前做过的图全部重跑一遍，逐张比对输出，任何一张变了都要看过确认。新规则尽量做成模板开关，只对新图框生效。
