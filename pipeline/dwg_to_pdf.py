@@ -118,7 +118,7 @@ def convert(dwg, pdf):
     # drop entities with broken (NaN/huge) extents and far outliers (e.g. stray points far from the sheet)
     from ezdxf import bbox as _bbox
     import math, statistics
-    msp = doc.modelspace(); ok = {}
+    msp = doc.modelspace(); ok = {}; forced = set()
     for e in doc.entitydb.values():   # repair GBK text everywhere (model space and blocks)
         try:
             t = e.dxftype()
@@ -128,6 +128,13 @@ def convert(dwg, pdf):
                 e.text = fix_text(_r.sub(r'\\[Ff][^;]*;', '', e.text))
             elif t == 'DIMENSION' and e.dxf.get('text'): e.dxf.text = fix_text(e.dxf.text)
         except Exception: pass
+    for e in list(doc.entitydb.values()):   # broken extension dictionaries break block explosion: drop them
+        try:
+            xd = getattr(e, 'extension_dict', None)
+            if xd is not None and getattr(xd.dictionary, 'doc', None) is None: e.extension_dict = None
+        except Exception:
+            try: e.extension_dict = None
+            except Exception: pass
     for e in msp:   # LibreDWG -m dumps can drop the layer name: such entities would be invisible
         try:
             if not e.dxf.get('layer'): e.dxf.layer = '0'
@@ -139,7 +146,8 @@ def convert(dwg, pdf):
                 if len(pts) < 2: continue
             b = _bbox.extents([e], fast=True)
             if b.has_data and all(math.isfinite(v) for v in (*b.extmin, *b.extmax)): ok[e.dxf.handle] = b
-        except Exception: pass
+        except Exception:
+            if e.dxftype() == 'INSERT': forced.add(e.dxf.handle)   # e.g. the sheet frame block: extents unknown, still draw it
     if ok:
         cx = statistics.median((b.extmin.x + b.extmax.x) / 2 for b in ok.values())
         cy = statistics.median((b.extmin.y + b.extmax.y) / 2 for b in ok.values())
@@ -148,6 +156,7 @@ def convert(dwg, pdf):
         keep = {h for h, b in ok.items() if abs((b.extmin.x + b.extmax.x) / 2 - cx) < lim and abs((b.extmin.y + b.extmax.y) / 2 - cy) < lim}
     else:
         keep = set()
+    keep |= forced
     Frontend(RenderContext(doc), be, config=cfg).draw_layout(msp, filter_func=lambda e: e.dxf.handle in keep)
     Path(pdf).write_bytes(be.get_pdf_bytes(layout.Page(0, 0, layout.Units.mm, margins=layout.Margins.all(2))))
 
