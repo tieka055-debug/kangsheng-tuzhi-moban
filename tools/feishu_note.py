@@ -30,8 +30,10 @@ def main():
 
     helptext = run('+record-upsert', '--help').stdout
     (workdir / 'record-upsert-help.txt').write_text(helptext)
-    flag = next((f for f in ('--fields', '--json-data', '--data', '--record') if f in helptext), None)
-    if '--record-id' not in helptext or not flag:
+    import re
+    flags = set(re.findall(r'(--[a-z][a-z-]*) string', helptext))   # flags that take a value
+    flag = next((f for f in ('--json', '--fields', '--data') if f in flags), None)
+    if '--record-id' not in flags or not flag:
         print('lark-cli 的 +record-upsert 参数和预期不同，未写入任何内容。请把 record-upsert-help.txt 发给我。'); sys.exit(1)
 
     before = export('notes-before.ndjson')
