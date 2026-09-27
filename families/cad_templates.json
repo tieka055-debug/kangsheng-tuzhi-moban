@@ -231,6 +231,24 @@
    "table_band_top": 0.829,
    "rail_cap": 1.15,
    "join_line_pieces": true
+  },
+  "D_dingduan": {
+   "desc": "鼎端电子图框：右上 REV 修订栏，右下标题栏+公司 logo，左下 Recommended P.C.B Layout 说明保留",
+   "furniture_frac": [
+    [
+     0.69,
+     0.0,
+     1.0,
+     0.065
+    ],
+    [
+     0.53,
+     0.775,
+     1.0,
+     1.0
+    ]
+   ],
+   "line_extent_fix": true
   }
  }
 }

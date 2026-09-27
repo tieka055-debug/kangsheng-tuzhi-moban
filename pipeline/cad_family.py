@@ -272,6 +272,9 @@ def run(job, out, font, font_index=0):
     # ---- blocks: cluster paths by proximity
     g = 0.015 * cb.width
     rects = [fitz.Rect(d['rect']) for d in keep]
+    for r in (rects if tpl.get('line_extent_fix') else []):   # a straight line has a zero-width box, which Rect unions silently ignore: give it a hair of size
+        if r.width < 0.02: r.x0 -= 0.01; r.x1 += 0.01
+        if r.height < 0.02: r.y0 -= 0.01; r.y1 += 0.01
     par = list(range(len(rects)))
     def f_(i):
         while par[i] != i: par[i] = par[par[i]]; i = par[i]
@@ -329,6 +332,9 @@ def run(job, out, font, font_index=0):
                     if rects[i].width > 150 or rects[i].height > 150 or rects[i].y1 > 555: print('   ', [round(v, 1) for v in rects[i]], len(keep[i]['items']), keep[i]['items'][:2], file=sys.stderr)
         print('CB', [round(v, 1) for v in cb], file=sys.stderr)
         for d in keep:
+            P_ = [q for it in d['items'] for q in it[1:] if isinstance(q, fitz.Point)]
+            if P_ and max(q.x for q in P_) > d['rect'].x1 + 1: print('STALE', [round(v, 1) for v in d['rect']], d['items'][:2], file=sys.stderr)
+        for d in keep:
             if len(d['items']) == 2 and all(it[0] == 'l' for it in d['items']) and d['rect'].width > 20 and d['rect'].height > 20:
                 print('  L', [round(v, 1) for v in d['rect']], file=sys.stderr)
         print('I', [round(v, 1) for v in I], [[round(v, 1) for v in q] for q in furn], file=sys.stderr)
@@ -343,6 +349,12 @@ def run(job, out, font, font_index=0):
             if os.environ.get('CAD_DEBUG'): print('SMALL', [round(v, 1) for v in r], bool(side), file=sys.stderr)
             if side:
                 q = side[0]; q['idx'] += b_['idx']; q['r'] |= r; blocks.remove(b_)
+    for b_ in (blocks if tpl.get('line_extent_fix') else []):   # block extents follow their paths
+        b_['r'] = fitz.Rect()
+        for i in b_['idx']: b_['r'] |= rects[i]
+    if tpl.get('line_extent_fix'):
+        cb = fitz.Rect()
+        for b_ in blocks: cb |= b_['r']
     # right column (notes / dimension table / parts list) -> Kangsheng right rail; the rest are views
     split = cb.x0 + 0.58 * cb.width
     def to_rail(r):
@@ -408,6 +420,7 @@ def run(job, out, font, font_index=0):
         if sc < 0.6 * uni or job.get('layout') == 'sheet':   # rail would shrink the notes/tables more than the whole sheet would: keep sheet layout
             views, rail = views + rail, []
         x = RAIL.x1 - rb.width * sc; y = RAIL.y0
+        if os.environ.get("CAD_DEBUG"): print("RAIL", [round(v, 1) for v in rb], sc, [(round(rects[i].x1,1), keep[i]["items"][:1]) for b_ in rail for i in b_["idx"] if rects[i].x1 > 233], file=sys.stderr)
         m_ = fitz.Matrix(sc, 0, 0, sc, x - rb.x0 * sc, y - rb.y0 * sc)
         for b_ in rail:
             for i in b_['idx']: mats[i] = (m_, sc)

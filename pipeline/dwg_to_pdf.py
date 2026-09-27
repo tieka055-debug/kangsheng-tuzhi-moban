@@ -8,7 +8,7 @@ FONT = 'NotoSansCJK-Regular.ttc'
 
 def fix_text(s):
     """Old DWGs store GBK text; LibreDWG hands it over as Latin-1 (sometimes UTF-8 re-encoded once more)."""
-    if not s or all(ord(c) < 128 for c in s): return s
+    if not s or all(ord(c) < 128 or c in '±°ΩΦφ×²³µ' for c in s): return s   # plain text with drawing symbols
     def gbk(t):
         try: return t.encode('latin-1').decode('gbk')
         except Exception: return None
@@ -61,6 +61,12 @@ def convert(dwg, pdf):
             try: e.audit(self)
             except Exception: pass
     _audit.Auditor.audit_all_database_entities = _safe_all
+    from ezdxf.layouts import base as _lb
+    _ro = _lb.BaseLayout.get_redraw_order
+    def _safe_ro(self):   # a broken extension dictionary must not stop the drawing: fall back to file order
+        try: return _ro(self)
+        except Exception: return {}
+    _lb.BaseLayout.get_redraw_order = _safe_ro
     from ezdxf.addons.drawing import RenderContext, Frontend, layout, config
     from ezdxf.addons.drawing import pymupdf as _pm
     from ezdxf.addons.drawing.pymupdf import PyMuPdfBackend
@@ -119,7 +125,7 @@ def convert(dwg, pdf):
             if t in ('TEXT', 'ATTRIB', 'ATTDEF'): e.dxf.text = fix_text(e.dxf.text)
             elif t == 'MTEXT':   # inline font switches point to SHX/Windows fonts we do not have: use the style font
                 import re as _r
-                e.text = _r.sub(r'\\[Ff][^;]*;', '', fix_text(e.text))
+                e.text = fix_text(_r.sub(r'\\[Ff][^;]*;', '', e.text))
             elif t == 'DIMENSION' and e.dxf.get('text'): e.dxf.text = fix_text(e.dxf.text)
         except Exception: pass
     for e in msp:   # LibreDWG -m dumps can drop the layer name: such entities would be invisible
@@ -128,6 +134,9 @@ def convert(dwg, pdf):
         except Exception: pass
     for e in msp:
         try:
+            if e.dxftype() == 'LWPOLYLINE':   # LibreDWG can emit polylines with broken vertex data
+                pts = list(e.get_points())
+                if len(pts) < 2: continue
             b = _bbox.extents([e], fast=True)
             if b.has_data and all(math.isfinite(v) for v in (*b.extmin, *b.extmax)): ok[e.dxf.handle] = b
         except Exception: pass
