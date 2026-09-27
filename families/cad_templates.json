@@ -109,6 +109,57 @@
      0.085
     ]
    ]
+  },
+  "N_nd_dwg_sheet": {
+   "desc": "诺德/北冠 DWG 多图单页：字母列头外框，底部标题栏+公司名在内框外，左上 RoHS，右上 SYMBOL/REVISION 修订栏；零件表保留（需 frame_bottom=title_top）",
+   "furniture_frac": [
+    [
+     0.0,
+     0.0,
+     0.075,
+     0.09
+    ],
+    [
+     0.645,
+     0.0,
+     1.0,
+     0.105
+    ]
+   ]
+  },
+  "N_nd_dwg_tall": {
+   "desc": "诺德 DWG 单页（标题栏整宽横线，需 frame_bottom=inner_ring）：RoHS 与修订栏并排在右上，底部公司名+标题栏",
+   "furniture_frac": [
+    [
+     0.565,
+     0.0,
+     1.0,
+     0.115
+    ],
+    [
+     0.0,
+     0.893,
+     1.0,
+     1.0
+    ]
+   ]
+  },
+  "BG_dwg_sheet": {
+   "desc": "BG DWG 多图单页：右上 SYMBOL/REVISION 修订栏，左上 RoHS，底部标题栏在内框外（需 frame_bottom=title_top）",
+   "furniture_frac": [
+    [
+     0.0,
+     0.0,
+     0.075,
+     0.065
+    ],
+    [
+     0.645,
+     0.0,
+     1.0,
+     0.09
+    ]
+   ]
   }
  }
 }

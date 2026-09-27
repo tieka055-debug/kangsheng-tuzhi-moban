@@ -32,7 +32,25 @@ def fix_dxf(raw: str) -> str:
         out.append(lines[i]); 
         if i + 1 < len(lines): out.append(lines[i + 1])
         i += 2
-    return '\n'.join(out)
+    # LibreDWG writes an MTEXT's first chunk (code 1) before its continuation chunks (code 3); DXF readers
+    # append code 1 last, which scrambles long notes: re-emit the chunks in file order, last one as code 1
+    pairs = [(out[k], out[k + 1] if k + 1 < len(out) else '') for k in range(0, len(out), 2)]
+    res = []; k = 0
+    while k < len(pairs):
+        c, v = pairs[k]
+        if c.strip() == '0' and v.strip() == 'MTEXT':
+            e = k + 1
+            while e < len(pairs) and pairs[e][0].strip() != '0': e += 1
+            ent = pairs[k:e]
+            idx = [n for n, (cc, _) in enumerate(ent) if cc.strip() in ('1', '3')]
+            codes = [ent[n][0].strip() for n in idx]
+            if '3' in codes and codes.index('1') < len(codes) - 1:
+                vals = [ent[n][1] for n in idx]
+                for m_, n in enumerate(idx):
+                    ent[n] = (ent[n][0].replace(ent[n][0].strip(), '1' if m_ == len(idx) - 1 else '3'), vals[m_])
+            res += ent; k = e; continue
+        res.append(pairs[k]); k += 1
+    return '\n'.join(x for pr in res for x in pr)
 
 
 def convert(dwg, pdf):

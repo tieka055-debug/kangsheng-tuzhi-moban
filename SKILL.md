@@ -134,3 +134,6 @@ python pipeline/cad_family.py job.json --out 输出目录 --font 字体 [--font-
 - 颜色：黑、灰、绿和原图主标注色转为康生蓝；其他彩色（端子、焊盘等重点）转为康生金。
 - 公差：照原图读出后写进 `tolerance`（可用尺寸段写法，例如 `UP TO 5 ±0.2`）。
 - 只有 PNG 图片的原图不做，先向供应商要 DWG 或 PDF。
+- 一个 DWG 里横排/竖排画了多张图：先 `python pipeline/split_sheets.py 原图.pdf 拆分目录` 拆成单张，再逐张做；报 `WIDE_SEGMENT` 的段是两张图框贴在一起，人工定切分位置。拆出的顺序要和飞书里 2D 图的顺序逐张核对。
+- 可选键：`frame_bottom`（`title_top`：标题栏整宽时内框底边取标题栏顶线；`inner_ring`：取外框往里的第二条线），`dominant_colour`（同一系列多张图固定哪种颜色转蓝，保证整套配色一致）。
+- 某张图 DWG 转换后文字/表格缺失（与同系列其他张对比能看出），该张不出图，报给人处理，不从别的型号抄。

@@ -67,7 +67,7 @@ def long_lines(D, orient, min_len, lo=None, hi=None):
     return out
 
 
-def analyse(page, furniture_frac=None):
+def analyse(page, furniture_frac=None, frame_bottom=None):
     D = page.get_drawings()
     bb = fitz.Rect()
     for d in D: bb |= d['rect']
@@ -78,7 +78,17 @@ def analyse(page, furniture_frac=None):
     lefs = [x for _, _, x in V if x < bb.x0 + 0.12 * bb.width]
     rigs = [x for _, _, x in V if x > bb.x1 - 0.12 * bb.width]
     if not (tops and bots and lefs and rigs): raise SystemExit('FRAME_NOT_FOUND')
-    I = fitz.Rect(max(lefs), max(tops), min(rigs), min(bots))
+    y1 = min(bots)
+    if frame_bottom == 'title_top':
+        # sheets whose title block spans the full width: stop the drawing area at the title block's top rule
+        y1 = min([y for _, _, y in long_lines(D, 'H', 0.9 * bb.width) if y > bb.y1 - 0.2 * bb.height] or [y1])
+    if frame_bottom == 'inner_ring':
+        # sheets whose title-block rules also run full width: the inner frame is the second line from the outer edge
+        cl = []
+        for y in sorted(bots, reverse=True):
+            if not cl or cl[-1] - y > 1.0: cl.append(y)
+        if len(cl) >= 2: y1 = cl[1]
+    I = fitz.Rect(max(lefs), max(tops), min(rigs), y1)
     # title block: horizontal rules that end on the inner right edge in the lower part -> stepped region
     h_all = long_lines(D, 'H', 0.08 * I.width)
     tol = 1.5
@@ -140,13 +150,18 @@ def run(job, out, font, font_index=0):
     ff = job.get('furniture_frac')
     if job.get('template'):
         ff = json.loads((ROOT / 'families' / 'cad_templates.json').read_text())['templates'][job['template']]['furniture_frac']
-    D, bb, I, furn = analyse(page, ff)
+    D, bb, I, furn = analyse(page, ff, job.get('frame_bottom'))
     keep, dropped = [], collections.Counter()
     for d in D:
         r = d['rect']
         if not fitz.Rect(I.x0 - 0.5, I.y0 - 0.5, I.x1 + 0.5, I.y1 + 0.5).contains(r):
             dropped['frame_band'] += 1; continue
         if r.width > 0.9 * I.width or r.height > 0.9 * I.height:
+            dropped['frame_rule'] += 1; continue
+        # a long straight rule lying on the inner-frame edge (e.g. the title-block top line) is frame, not drawing
+        if all(it[0] == 'l' for it in d['items']) and (
+                (r.height < 0.6 and r.width > 2.0 and min(abs(r.y0 - I.y0), abs(r.y1 - I.y1)) < 1.0) or
+                (r.width < 0.6 and r.height > 2.0 and min(abs(r.x0 - I.x0), abs(r.x1 - I.x1)) < 1.0)):
             dropped['frame_rule'] += 1; continue
         if inside_any(r, furn):
             dropped['title_or_rev'] += 1; continue
@@ -184,6 +199,8 @@ def run(job, out, font, font_index=0):
         c = d.get('color') if d['type'] != 'f' else d.get('fill')
         if c is not None and not is_neutral(c): cnt[ckey(c)] += 1
     dominant = cnt.most_common(1)[0][0] if cnt else None
+    if job.get('dominant_colour'):   # a series keeps one colour mapping across all its sheets
+        dominant = ckey(tuple(job['dominant_colour']))
     GREEN = (0.0, 1.0, 0.0)
     def mapc(c):
         if c is None: return None
