@@ -147,12 +147,34 @@ def run(job, out, font, font_index=0):
         page.set_rotation((page.rotation + int(job['rotate'])) % 360)
     if page.rotation:
         page.remove_rotation()   # work in the upright drawing orientation
-    ff = job.get('furniture_frac')
+    ff = job.get('furniture_frac'); tpl = {}
     if job.get('template'):
-        ff = json.loads((ROOT / 'families' / 'cad_templates.json').read_text())['templates'][job['template']]['furniture_frac']
+        tpl = json.loads((ROOT / 'families' / 'cad_templates.json').read_text())['templates'][job['template']]
+        ff = tpl['furniture_frac']
     D, bb, I, furn = analyse(page, ff, job.get('frame_bottom'))
     keep, dropped = [], collections.Counter()
+    def trim(it):
+        # an axis-aligned rule running from the drawing into a removed supplier area stops at that area's edge
+        if it[0] != 'l' or not furn: return it
+        a_, b_ = it[1], it[2]
+        for q in furn:
+            qa, qb = fitz.Rect(q.x0 - 0.6, q.y0 - 0.6, q.x1 + 0.6, q.y1 + 0.6).contains(a_), fitz.Rect(q.x0 - 0.6, q.y0 - 0.6, q.x1 + 0.6, q.y1 + 0.6).contains(b_)
+            if qa == qb: continue
+            inn, out = (a_, b_) if qa else (b_, a_)
+            if abs(a_.y - b_.y) < 0.3 and q.y0 + 0.6 < inn.y:   # horizontal, entering through a side edge
+                x = q.x0 if out.x < q.x0 else q.x1
+                if abs(inn.x - x) > 1: return ('l', out, fitz.Point(x, inn.y))
+            elif abs(a_.x - b_.x) < 0.3 and q.x0 + 0.6 < inn.x < q.x1 - 0.6:   # vertical, entering through top/bottom
+                y = q.y0 if out.y < q.y0 else q.y1
+                if abs(inn.y - y) > 1: return ('l', out, fitz.Point(inn.x, y))
+        return it
     for d in D:
+        if furn and any(it[0] == 'l' for it in d['items']):
+            its = [trim(it) for it in d['items']]
+            if any(a is not b for a, b in zip(its, d['items'])):
+                P_ = [q for it in its for q in it[1:] if isinstance(q, fitz.Point)]
+                d = dict(d); d['items'] = its; dropped['rule_trimmed'] += 1
+                if P_: d['rect'] = fitz.Rect(min(q.x for q in P_), min(q.y for q in P_), max(q.x for q in P_), max(q.y for q in P_))
         r = d['rect']
         if not fitz.Rect(I.x0 - 0.5, I.y0 - 0.5, I.x1 + 0.5, I.y1 + 0.5).contains(r):
             dropped['frame_band'] += 1; continue
@@ -193,7 +215,8 @@ def run(job, out, font, font_index=0):
     if not keep: raise SystemExit('NOTHING_TO_PLACE')
     # a table standing on the supplier title block shares its bottom rule with the block: when three or more
     # kept vertical rules end on a removed area's top edge, redraw the bottom rule between them
-    for q in furn:
+    # (the inner frame's bottom edge counts too: a parts table may stand on the frame itself)
+    for q in list(furn) + [fitz.Rect(I.x0, I.y1, I.x1, I.y1 + 1)]:
         ends = []
         for d in keep:
             for it in d['items']:
@@ -303,12 +326,23 @@ def run(job, out, font, font_index=0):
             print('BLOCK', [round(v, 1) for v in b_['r']], len(b_['idx']), file=sys.stderr)
             if os.environ.get('CAD_DEBUG') == '2':
                 for i in b_['idx']:
-                    if rects[i].x1 > 480 and rects[i].y1 > 300: print('   ', [round(v, 1) for v in rects[i]], len(keep[i]['items']), file=sys.stderr)
+                    if rects[i].width > 150 or rects[i].height > 150 or rects[i].y1 > 555: print('   ', [round(v, 1) for v in rects[i]], len(keep[i]['items']), keep[i]['items'][:2], file=sys.stderr)
         print('CB', [round(v, 1) for v in cb], file=sys.stderr)
         for d in keep:
             if len(d['items']) == 2 and all(it[0] == 'l' for it in d['items']) and d['rect'].width > 20 and d['rect'].height > 20:
                 print('  L', [round(v, 1) for v in d['rect']], file=sys.stderr)
         print('I', [round(v, 1) for v in I], [[round(v, 1) for v in q] for q in furn], file=sys.stderr)
+    # a small piece sitting on the same line right next to a bigger block (e.g. the end of a note line) joins it
+    if len(blocks) > 1 and tpl.get('join_line_pieces'):
+        for b_ in sorted(blocks, key=lambda q: q['r'].width * q['r'].height):
+            r = b_['r']
+            if b_ not in blocks or r.width * r.height > 0.01 * cb.width * cb.height: continue
+            side = [q for q in blocks if q is not b_ and q['r'].width * q['r'].height > r.width * r.height
+                    and any(min(r.y1, rects[i].y1) - max(r.y0, rects[i].y0) > 0.5 * r.height
+                            and min(abs(r.x0 - rects[i].x1), abs(rects[i].x0 - r.x1)) < 0.04 * cb.width for i in q['idx'])]
+            if os.environ.get('CAD_DEBUG'): print('SMALL', [round(v, 1) for v in r], bool(side), file=sys.stderr)
+            if side:
+                q = side[0]; q['idx'] += b_['idx']; q['r'] |= r; blocks.remove(b_)
     # right column (notes / dimension table / parts list) -> Kangsheng right rail; the rest are views
     split = cb.x0 + 0.58 * cb.width
     def to_rail(r):
@@ -319,6 +353,48 @@ def run(job, out, font, font_index=0):
     rail = [b_ for b_ in blocks if to_rail(b_['r'])]
     views = [b_ for b_ in blocks if b_ not in rail]
     if not views: views, rail = rail, []
+    # tables standing at the bottom of the source sheet (under the views, left of its title block) go to the free
+    # bottom-left slot beside the Kangsheng title block instead of forcing the whole view group to shrink
+    slot = []
+    if tpl.get('bottom_slot') or job.get('bottom_slot'):
+        # a parts table standing on the bottom edge beside the supplier title block often touches the views
+        # above it: split it off when the part below the title-block top is a real table (several full rules)
+        ycut = I.y0 + tpl.get('table_band_top', 0.815) * I.height - 2
+        for b_ in list(views):
+            low = [i for i in b_['idx'] if rects[i].y0 >= ycut]
+            if not low or len(low) == len(b_['idx']): continue
+            lr = fitz.Rect()
+            for i in low: lr |= rects[i]
+            rules = sum(1 for i in low for it in keep[i]['items'] if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3
+                        and abs(it[1].x - it[2].x) > 0.6 * lr.width)
+            if rules >= 3:
+                # the table may start above the cut (header rows): its vertical rules crossing the cut mark its top
+                cross = [rects[i].y0 for i in b_['idx'] if i not in low and rects[i].width < 0.6 and rects[i].y1 > ycut
+                         and lr.x0 - 3 <= rects[i].x0 <= lr.x1 + 3]
+                if cross:
+                    top = min(cross) - 1
+                    low = [i for i in b_["idx"] if fitz.Rect(lr.x0 - 3, top, lr.x1 + 3, lr.y1 + 1).contains(rects[i])]
+                    lr = fitz.Rect()
+                    for i in low: lr |= rects[i]
+                tr = fitz.Rect(lr.x0 - 3, lr.y0 - 1, lr.x1 + 3, lr.y1 + 1)
+                for q in views:   # pieces of the table that clustered into other blocks come along
+                    if q is b_: continue
+                    mv = [i for i in q['idx'] if tr.contains(rects[i])]
+                    if mv and len(mv) < len(q['idx']):
+                        q['idx'] = [i for i in q['idx'] if i not in mv]; q['r'] = fitz.Rect()
+                        for i in q['idx']: q['r'] |= rects[i]
+                        low += mv
+                b_['idx'] = [i for i in b_['idx'] if i not in low]; b_['r'] = fitz.Rect()
+                for i in b_['idx']: b_['r'] |= rects[i]
+                views.append({'idx': low, 'r': lr})
+    if os.environ.get('CAD_DEBUG') == '4':
+        for b_ in views:
+            for i in b_['idx']:
+                if rects[i].width > 100 and rects[i].height < 2: print('VH', [round(v, 1) for v in b_['r']], [round(v, 1) for v in rects[i]], keep[i]['items'], file=sys.stderr)
+    if (tpl.get('bottom_slot') or job.get('bottom_slot')) and len(views) > 1:
+        slot = [b_ for b_ in views if b_['r'].y0 >= cb.y0 + 0.72 * cb.height]
+        if len(slot) == len(views): slot = []
+        views = [b_ for b_ in views if b_ not in slot]
     mats = {}
     RAIL = fitz.Rect(600, 38, 814, 444)
     if rail:
@@ -328,6 +404,7 @@ def run(job, out, font, font_index=0):
         rw = RAIL.x1 - 524          # the rail may widen leftwards up to x=524 (same limit as the Zhiyuan rule)
         sc = min(rw / rb.width, RAIL.height / rb.height)
         uni = min((FRAME.width - 20) / cb.width, (FRAME.height - 20) / cb.height)
+        if tpl.get('rail_cap'): sc = min(sc, tpl['rail_cap'] * uni)   # notes never blow up far beyond the drawing's scale
         if sc < 0.6 * uni or job.get('layout') == 'sheet':   # rail would shrink the notes/tables more than the whole sheet would: keep sheet layout
             views, rail = views + rail, []
         x = RAIL.x1 - rb.width * sc; y = RAIL.y0
@@ -340,7 +417,7 @@ def run(job, out, font, font_index=0):
     # views keep their arrangement, enlarged uniformly into the left area, clear of the title block
     vb = fitz.Rect()
     for b_ in views: vb |= b_['r']
-    area = fitz.Rect(FRAME.x0 + 10, FRAME.y0 + 10, rail_x0, FRAME.y1 - 8)
+    area = fitz.Rect(FRAME.x0 + 10, FRAME.y0 + 10, rail_x0, (RESERVED.y0 - 6) if slot else FRAME.y1 - 8)
     s = min(area.width / vb.width, area.height / vb.height)
     placed = None
     while s > 0.2:
@@ -353,6 +430,15 @@ def run(job, out, font, font_index=0):
     s, m = placed
     for b_ in views:
         for i in b_['idx']: mats[i] = (m, s)
+    if slot:
+        sb = fitz.Rect()
+        for b_ in slot: sb |= b_['r']
+        SLOT = fitz.Rect(FRAME.x0 + 10, RESERVED.y0 + 2, RESERVED.x0 - 10, FRAME.y1 - 6)
+        ss = min(SLOT.width / sb.width, SLOT.height / sb.height, s)
+        ms = fitz.Matrix(ss, 0, 0, ss, SLOT.x0 + (SLOT.width - sb.width * ss) / 2 - sb.x0 * ss,
+                         SLOT.y0 + (SLOT.height - sb.height * ss) / 2 - sb.y0 * ss)
+        for b_ in slot:
+            for i in b_['idx']: mats[i] = (ms, ss)
     doc = fitz.open(); pg = doc.new_page(width=KF.PAGE[0], height=KF.PAGE[1])
     pg.insert_image(pg.rect, filename=str(ROOT / 'assets' / 'background.png'))
     sh = pg.new_shape()
