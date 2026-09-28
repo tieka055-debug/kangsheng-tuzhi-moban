@@ -178,7 +178,8 @@ def run(job, out, font, font_index=0):
                 d = dict(d); d['items'] = its; dropped['rule_trimmed'] += 1
                 if P_: d['rect'] = fitz.Rect(min(q.x for q in P_), min(q.y for q in P_), max(q.x for q in P_), max(q.y for q in P_))
         r = d['rect']
-        if not fitz.Rect(I.x0 - 0.5, I.y0 - 0.5, I.x1 + 0.5, I.y1 + 0.5).contains(r):
+        fp = tpl.get('frame_pad', 0.5)   # tables drawn up to the outer frame line need a little more slack
+        if not fitz.Rect(I.x0 - fp, I.y0 - fp, I.x1 + fp, I.y1 + fp).contains(r):
             dropped['frame_band'] += 1; continue
         if r.width > 0.9 * I.width or r.height > 0.9 * I.height:
             dropped['frame_rule'] += 1; continue
