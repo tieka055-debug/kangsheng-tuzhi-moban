@@ -296,7 +296,9 @@
     ]
    ],
    "frame_pad": 1.5,
-   "rail_cap": 1.15
+   "rail_cap": 1.15,
+   "split_paths": true,
+   "rail_stack": true
   }
  }
 }

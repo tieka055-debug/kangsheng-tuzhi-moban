@@ -274,6 +274,37 @@ def run(job, out, font, font_index=0):
     for d in keep: cb |= d['rect']
     # ---- blocks: cluster paths by proximity
     g = 0.015 * cb.width
+    if tpl.get('split_paths'):
+        # some exports bundle unrelated strokes (a leader line and a table rule far apart) into one path:
+        # split such paths into their spatially separate pieces so they do not glue blocks together
+        def ibox(it):
+            P_ = [q for q in it[1:] if isinstance(q, fitz.Point)]
+            if not P_ and it[0] in ('re', 'qu'): return fitz.Rect(it[1].rect if it[0] == 'qu' else it[1])
+            return fitz.Rect(min(q.x for q in P_), min(q.y for q in P_), max(q.x for q in P_), max(q.y for q in P_))
+        split_ = []
+        for d in keep:
+            its = d['items']
+            if len(its) < 2 or (d['rect'].width < 6 * g and d['rect'].height < 6 * g):
+                split_.append(d); continue
+            bx = [ibox(it) for it in its]; pa = list(range(len(its)))
+            def fr(i):
+                while pa[i] != i: pa[i] = pa[pa[i]]; i = pa[i]
+                return i
+            for i in range(len(its)):
+                for j in range(i + 1, len(its)):
+                    if bx[j].x0 <= bx[i].x1 + g and bx[i].x0 <= bx[j].x1 + g and bx[j].y0 <= bx[i].y1 + g and bx[i].y0 <= bx[j].y1 + g:
+                        pa[fr(j)] = fr(i)
+            grp = collections.defaultdict(list)
+            for i in range(len(its)): grp[fr(i)].append(i)
+            if len(grp) == 1: split_.append(d); continue
+            for idx in grp.values():
+                e = dict(d); e['items'] = [its[i] for i in idx]; e['closePath'] = False
+                e['rect'] = fitz.Rect(min(bx[i].x0 for i in idx), min(bx[i].y0 for i in idx),
+                                      max(bx[i].x1 for i in idx), max(bx[i].y1 for i in idx)); split_.append(e)
+            dropped['paths_split'] += 1
+        keep = split_
+        cb = fitz.Rect()
+        for d in keep: cb |= d['rect']
     rects = [fitz.Rect(d['rect']) for d in keep]
     for r in (rects if tpl.get('line_extent_fix') else []):   # a straight line has a zero-width box, which Rect unions silently ignore: give it a hair of size
         if r.width < 0.02: r.x0 -= 0.01; r.x1 += 0.01
@@ -427,6 +458,48 @@ def run(job, out, font, font_index=0):
         m_ = fitz.Matrix(sc, 0, 0, sc, x - rb.x0 * sc, y - rb.y0 * sc)
         for b_ in rail:
             for i in b_['idx']: mats[i] = (m_, sc)
+        if rail and tpl.get('rail_stack') and len(rail) > 1:
+            # house rule: pin/dimension table top-right, performance notes stacked directly below it
+            gap = 8.0
+            def is_table(b_):
+                return sum(1 for i in b_['idx'] for it in keep[i]['items'] if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3
+                           and abs(it[1].x - it[2].x) > 0.6 * b_['r'].width) >= 4
+            rbp = fitz.Rect(rb.x0 - 1, rb.y0 - 1, rb.x1 + 1, rb.y1 + 1)
+            for b_ in views:   # pieces of the table (grid lines) that were merged into a view block travel with the rail
+                mv = [i for i in b_['idx'] if rbp.contains(rects[i])]
+                if mv:
+                    b_['idx'] = [i for i in b_['idx'] if i not in mv]
+                    rail.append({'idx': mv, 'r': fitz.Rect(min(rects[i].x0 for i in mv), min(rects[i].y0 for i in mv),
+                                                            max(rects[i].x1 for i in mv), max(rects[i].y1 for i in mv))})
+            views = [b_ for b_ in views if b_['idx']]
+            for b_ in views:
+                b_['r'] = fitz.Rect()
+                for i in b_['idx']: b_['r'] |= rects[i]
+            units = []   # blocks whose boxes overlap (a table's grid and its text) move together
+            for b_ in sorted(rail, key=lambda q: -q['r'].width * q['r'].height):
+                hit = next((u for u in units if fitz.Rect(u['r'].x0 - 2, u['r'].y0 - 2, u['r'].x1 + 2, u['r'].y1 + 2).intersects(b_['r'])), None)
+                if hit: hit['idx'] = hit['idx'] + b_['idx']; hit['r'] = hit['r'] | b_['r']
+                else: units.append({'idx': list(b_['idx']), 'r': fitz.Rect(b_['r'])})
+            grew = True
+            while grew:
+                grew = False
+                for u in units:
+                    for v in units:
+                        if u is not v and u['r'].intersects(v['r']):
+                            u['idx'] += v['idx']; u['r'] |= v['r']; units.remove(v); grew = True; break
+                    if grew: break
+            order = sorted(units, key=lambda b_: (not is_table(b_), b_['r'].y0))
+            wmax = max(b_['r'].width for b_ in order); htot = sum(b_['r'].height for b_ in order) + gap * (len(order) - 1)
+            sc = min(rw / wmax, RAIL.height / htot)
+            if tpl.get('rail_cap'): sc = min(sc, tpl['rail_cap'] * uni)
+            if os.environ.get('CAD_DEBUG'): print('STACK', [[round(v, 1) for v in u['r']] for u in order], file=sys.stderr)
+            y = RAIL.y0; xl = RAIL.x1
+            for b_ in order:
+                x_ = RAIL.x1 - b_['r'].width * sc; xl = min(xl, x_)
+                mm = fitz.Matrix(sc, 0, 0, sc, x_ - b_['r'].x0 * sc, y - b_['r'].y0 * sc)
+                for i in b_['idx']: mats[i] = (mm, sc)
+                y += b_['r'].height * sc + gap
+            x = xl
         rail_x0 = x - 10 if rail else FRAME.x1 - 8
     else:
         rail_x0 = FRAME.x1 - 8
