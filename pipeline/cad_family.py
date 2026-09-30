@@ -136,6 +136,16 @@ def inside_any(r, rects, pad=0.6):
 
 def run(job, out, font, font_index=0):
     src_path = job['source']
+    auto = None
+    if not job.get('template') or job.get('template') == 'auto':
+        # no template named: match the sheet's frame against every frame we have already made (see frame_match.py)
+        import frame_match as fm
+        auto = fm.match(src_path, job.get('clip'))
+        if auto['status'] != 'OK':
+            raise SystemExit(f"{auto['status']}: 图框和已登记的模板对不上或不唯一（最像 {auto['template']}，分数 {auto['score']}，次像 {auto['runner_up']}）。"
+                             "按 SKILL.md「新建模板」做模板，再用 frame_match.py --learn 登记；不要硬做。")
+        job = dict(job, template=auto['template'])
+        if 'rotate' not in job: job['rotate'] = auto['rotate']
     probe = fitz.open(src_path)
     if probe[0].get_text('words'):
         # live text: convert glyphs to outlines so every character is carried as vector ink
@@ -451,7 +461,7 @@ def run(job, out, font, font_index=0):
         sc = min(rw / rb.width, RAIL.height / rb.height)
         uni = min((FRAME.width - 20) / cb.width, (FRAME.height - 20) / cb.height)
         if tpl.get('rail_cap'): sc = min(sc, tpl['rail_cap'] * uni)   # notes never blow up far beyond the drawing's scale
-        if sc < 0.6 * uni or job.get('layout') == 'sheet':   # rail would shrink the notes/tables more than the whole sheet would: keep sheet layout
+        if sc < 0.6 * uni or (job.get('layout') or tpl.get('layout')) == 'sheet':   # rail would shrink the notes/tables more than the whole sheet would: keep sheet layout
             views, rail = views + rail, []
         x = RAIL.x1 - rb.width * sc; y = RAIL.y0
         if os.environ.get("CAD_DEBUG"): print("RAIL", [round(v, 1) for v in rb], sc, [(round(rects[i].x1,1), keep[i]["items"][:1]) for b_ in rail for i in b_["idx"] if rects[i].x1 > 233], file=sys.stderr)
@@ -544,6 +554,7 @@ def run(job, out, font, font_index=0):
         col = mapc(d.get('color')) if t in ('s', 'fs') else None
         fil = mapc(d.get('fill')) if t in ('f', 'fs') else None
         w = max((d.get('width') or 0) * s, 0.4)
+        if tpl.get('width_cap'): w = min(w, tpl['width_cap'])   # some CAD exports draw leaders/table frames 4-7x heavier than the rest
         sh.finish(color=col, fill=fil, width=w, closePath=d.get('closePath', False),
                   even_odd=d.get('even_odd', False), lineCap=0, lineJoin=0)
     sh.commit()
@@ -571,14 +582,15 @@ def run(job, out, font, font_index=0):
     rep = {'source': job['source'], 'inner_frame': list(I), 'supplier_furniture_rects': [list(r) for r in furn],
            'paths_total': len(D), 'paths_placed': len(keep), 'dropped': dict(dropped),
            'dominant_colour_to_blue': dominant, 'other_colours_to_gold': [k for k in cnt if k != dominant],
-           'scale': round(s, 4), 'output': str(pdf)}
+           'scale': round(s, 4), 'output': str(pdf), 'auto_match': auto,
+           'warnings': (['SMALL_SCALE: 缩放 < 0.55，视图会偏小，请看对照图'] if s < 0.55 else [])}
     (out / 'report.json').write_text(json.dumps(rep, ensure_ascii=False, indent=1))
     # side-by-side review image
     rv = fitz.open(); r = rv.new_page(width=1700, height=640)
     r.show_pdf_page(fitz.Rect(5, 20, 845, 635), src, 0, clip=bb)
     r.show_pdf_page(fitz.Rect(855, 20, 1695, 635), doc, 0)
     r.get_pixmap(dpi=110).save(out / f"{job['model']}-原图对照.png")
-    print(json.dumps({k: rep[k] for k in ('paths_total', 'paths_placed', 'dropped', 'scale')}, ensure_ascii=False))
+    print(json.dumps({k: rep[k] for k in ('paths_total', 'paths_placed', 'dropped', 'scale', 'warnings')}, ensure_ascii=False))
     return rep
 
 
