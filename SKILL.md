@@ -132,7 +132,9 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
    - 横排/竖排多张（DWG 常见）：`python pipeline/split_sheets.py 原图.pdf 拆分目录` 拆成单张。报 `WIDE_SEGMENT` 的是两张图框贴在一起，看一眼再定切分位置。
    - cad2pdf 一页并排两张：不拆，job 里加 `"clip": [x0,y0,x1,y1]`。
    - 拆出的每张要和飞书 2D 图逐张对上（图名、Pin 数），顺序不能想当然。
-3. **选模板。** 按下表的图框描述选；拿不准就先用 `tools/grid_preview.py 原图.pdf 预览.png` 看网格。都不像 → 新建模板（见下）。
+3. **选模板。** 先让程序自动判：`python pipeline/frame_match.py 原图.pdf`（按图框长线条的几何和已做过的图框比对，只用线条，不读文字），job 里 `"template": "auto"`（或不写）时 `cad_family.py` 自己调用它。结果 `OK` 才继续，模板和旋转都会自动用；`AMBIGUOUS`/`UNKNOWN_FRAME`/`NO_FRAME` → **不硬做**，按下面「新建模板」做模板，再用 `frame_match.py --learn 模板名 原图.pdf [--rotate N] [--search 0.3]` 登记；对不上的图不要套最像的模板（会留下供应商标题栏残影）。手动选也行：按下表的图框描述选，拿不准先用 `tools/grid_preview.py 原图.pdf 预览.png [--rotate N] [--search 0.3]` 看网格。
+   - **标题**用图纸自己的品名（例如 DC 电源插座、电池连接器、USB 连接器），不要用默认的「连接器」；看不出来就问人。
+   - 原图已经是康生图框（标题栏写「深圳市康生电子科技有限公司」）的，不用再转。
 4. **读公差。** 放大原图的公差格（例如 `page.get_pixmap(dpi=600, clip=...)`），逐行照抄到 `tolerance`。字体不支持的符号（如 `≤`、`∠`）改写成 `0~5`、`ANG`，数值不变。
 5. **写 job.json 并运行：**
    ```json
@@ -164,7 +166,13 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 | `Z_zhiyuan_cad` | 质源 CAD 图框（横向阅读）：右下标题栏+公差栏；四边「由 Autodesk 教育版产品制作」水印；左下零件/尺寸表保留 |
 | `Z_zhiyuan_cad2` | 质源 CAD 图框（cad2pdf 文字为线条的版本，标题栏略低）：同 Z_zhiyuan_cad |
 | `D_dingduan` | 鼎端电子图框：右上 REV 修订栏，右下标题栏+公司 logo，左下 Recommended P.C.B Layout 说明保留 |
+| `LF_lvfeng` / `Y_yonghui_dc` / `F_fuping_micro` / `GGD_gaogaoda` / `XZ_xiezhan` / `CY_chuangyue` / `AL_ailiante` | 绿丰、永辉DC、创勤阜平、高高达、协展、创业、艾联特 各家的图框（各自需要的 rotate/layout 见 `desc`）；绿丰按固定规则把 PIN 表放右上、性能参数紧接其下 |
+| `SU_sunup` | SUN UP（Sanap）图框：整页外框，右上 REV/ECN/DATE，底部整条标题栏（2006/2008/2540/2501 系列） |
+| `KH_keheng` | 惠州科横/科衡图框：8 格数字/字母框，右上修订栏，顶部 RoHS 小框，右下标题栏 |
+| `RQ_runqing` | 润擎/鼎端 B01M 系列图框：黄色外框+黑色内框，框外上方有超大型号字，需 `frame_search` 0.3；右上修订栏，右下 logo+标题栏 |
 | `N_nd_cad2pdf` | 诺德 cad2pdf 图框（字母列头 F…A，右上 RoHS+修订栏，底部整条公司名/标题栏）；一页多图时用 job 的 clip 指定单张 |
+
+**模板开关（写在模板里，只对该图框生效）：** `bottom_slot`、`table_band_top`、`frame_pad`、`rail_cap`（右栏字不超过图的放大倍数×该值）、`join_line_pieces`、`split_paths`、`rail_stack`、`line_extent_fix`、`width_cap`（输出线宽上限）、`layout: "sheet"`（保持整页布局，不拉右栏）、`fit_search`（在标题栏外找最大可放缩放；不写时若普通缩放放不下会自动启用）、`rail_pull`（[[x0,y0,x1,y1],…]：这些区域的东西拉到右栏最上面，例如 PIN 表）、`rail_margin`、`frame_search`（内框搜索带，默认 0.12；大字写在框外的图用 0.3）。
 
 **新建模板：** 用 `tools/grid_preview.py` 看网格，把供应商标题栏、修订栏、RoHS、水印等区域按内框的比例写成 `furniture_frac: [[x0,y0,x1,y1], ...]`（0–1）。同一供应商同一图框只写一次。
 
@@ -174,4 +182,5 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 - 排版：视图保持原图相对位置，整体等比放大；右侧说明/尺寸表/材料表放右栏（最宽到 x=524）。**固定规则：右上角放 Pin 数尺寸表，紧接着下面放性能参数/说明**（模板开关 `rail_stack`；原图里表和说明左右并排时必须打开）。
 - 原图写错的（尺寸表删除线、数量和 Pin 数不符等）照原样保留，报给人核对，不自行改。
 - DWG 转换后某张图的文字/表格缺失（和同系列其他张对比能看出），这张不出图，备注「原图损坏，请供应商重发」。**不从别的型号抄。**
+- 图框判别库 `families/cad_signatures.json`：每个已验证图框存一个 3200 位的指纹。只登记看过对照图确认合格的图；不合格的图框保持「对不上」，不要登记。
 - 改了 `cad_family.py` 或模板：把以前做过的图全部重跑一遍，逐张比对输出，任何一张变了都要看过确认。新规则尽量做成模板开关，只对新图框生效。
