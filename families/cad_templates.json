@@ -311,7 +311,17 @@
      0.06
     ]
    ],
-   "width_cap": 1.2
+   "width_cap": 1.2,
+   "rail_pull": [
+    [
+     0.73,
+     0.855,
+     0.945,
+     0.955
+    ]
+   ],
+   "rail_margin": 8,
+   "fit_search": true
   },
   "Y_yonghui_dc": {
    "desc": "永辉 DC 插座图框（页面竖放，需 rotate 270）：绿色框，右下标题栏+签字栏，左上倒置图号小框；材料明细表(BOM)与 PIN 表保留",
@@ -329,25 +339,27 @@
      0.075
     ]
    ],
-   "layout": "sheet"
+   "layout": "sheet",
+   "fit_search": true
   },
   "F_fuping_micro": {
-   "desc": "创勤/阜平 图框（页面竖放，需 rotate 90）：左上 标题栏+公司名+公差栏，底部修改栏；技术要求文字保留",
+   "desc": "创勤/阜平 图框（页面竖放，需 rotate 270）：右下 标题栏+公司名+公差栏，右上 修改栏；技术要求文字保留",
    "rail_cap": 1.15,
    "furniture_frac": [
     [
-     0.0,
-     0.0,
-     0.415,
-     0.228
+     0.585,
+     0.772,
+     1.0,
+     1.0
     ],
     [
+     0.555,
      0.0,
-     0.952,
-     0.445,
-     1.0
+     1.0,
+     0.048
     ]
-   ]
+   ],
+   "fit_search": true
   },
   "GGD_gaogaoda": {
    "desc": "高高达 图框（页面竖放，需 rotate 270）：右下 公司名+标题栏+未注公差；右侧规格说明保留",
@@ -360,7 +372,8 @@
      1.0,
      1.0
     ]
-   ]
+   ],
+   "fit_search": true
   },
   "AL_ailiante": {
    "desc": "艾联特图框：外框即内框，四周分区字母/数字带；左上 RoHS，右上 业务图+REV/ECN 修订表，右下 标题栏；底部 Pin 定义表(A1 GND…)保留",
@@ -408,7 +421,9 @@
      1.0,
      1.0
     ]
-   ]
+   ],
+   "fit_search": true,
+   "layout": "sheet"
   },
   "XZ_xiezhan": {
    "desc": "协展(XIE ZHAN)图框：四边 Autodesk 教育版水印，右下 标题栏+公差栏（其上零件表保留），右上 REV/ECN 修订栏，左上 CAD GENERATED 说明字",
@@ -457,7 +472,8 @@
     ]
    ],
    "layout": "sheet",
-   "bottom_slot": true
+   "bottom_slot": true,
+   "fit_search": true
   },
   "CY_chuangyue": {
    "desc": "创业(创粤科技)图框（页面竖放，需 rotate 270；一份 PDF 内第1页是规格承认书封面、后面是测试报告，只取图纸页）：右下 公司名+标题栏+公差栏，左下 版本/修改栏；右侧规格说明保留",
@@ -475,7 +491,8 @@
      0.478,
      1.0
     ]
-   ]
+   ],
+   "fit_search": true
   }
  }
 }

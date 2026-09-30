@@ -451,8 +451,27 @@ def run(job, out, font, font_index=0):
         slot = [b_ for b_ in views if b_['r'].y0 >= cb.y0 + 0.72 * cb.height]
         if len(slot) == len(views): slot = []
         views = [b_ for b_ in views if b_ not in slot]
+    pullset = set()
+    if tpl.get('rail_pull'):
+        # house rule for sheets that draw the pin table beside the views: it joins the right column, on top
+        for a_, b2, c_, d_ in tpl['rail_pull']:
+            pr = fitz.Rect(I.x0 + a_ * I.width, I.y0 + b2 * I.height, I.x0 + c_ * I.width, I.y0 + d_ * I.height)
+            mv = []
+            for q in list(views) + list(rail) + list(slot):
+                got = [i for i in q['idx'] if rects[i].x0 >= pr.x0 and rects[i].x1 <= pr.x1 and rects[i].y0 >= pr.y0 and rects[i].y1 <= pr.y1]   # (a line's box is empty: Rect.contains would skip it)
+                if got:
+                    q['idx'] = [i for i in q['idx'] if i not in got]; mv += got
+            if mv:
+                pullset |= set(mv)
+                rail.append({'idx': mv, 'r': fitz.Rect(min(rects[i].x0 for i in mv), min(rects[i].y0 for i in mv),
+                                                        max(rects[i].x1 for i in mv), max(rects[i].y1 for i in mv))})
+        for lst in (views, rail, slot):
+            lst[:] = [q for q in lst if q['idx']]
+            for q in lst:
+                q['r'] = fitz.Rect()
+                for i in q['idx']: q['r'] |= rects[i]
     mats = {}
-    RAIL = fitz.Rect(600, 38, 814, 444)
+    RAIL = fitz.Rect(600, 38, 814 - tpl.get('rail_margin', 0), 444)
     if rail:
         # the right column moves as ONE unit (notes, tables and ordering diagrams keep their relative layout)
         rb = fitz.Rect()
@@ -498,7 +517,7 @@ def run(job, out, font, font_index=0):
                         if u is not v and u['r'].intersects(v['r']):
                             u['idx'] += v['idx']; u['r'] |= v['r']; units.remove(v); grew = True; break
                     if grew: break
-            order = sorted(units, key=lambda b_: (not is_table(b_), b_['r'].y0))
+            order = sorted(units, key=lambda b_: (not any(i in pullset for i in b_['idx']), not is_table(b_), b_['r'].y0))
             wmax = max(b_['r'].width for b_ in order); htot = sum(b_['r'].height for b_ in order) + gap * (len(order) - 1)
             sc = min(rw / wmax, RAIL.height / htot)
             if tpl.get('rail_cap'): sc = min(sc, tpl['rail_cap'] * uni)
@@ -519,7 +538,41 @@ def run(job, out, font, font_index=0):
     area = fitz.Rect(FRAME.x0 + 10, FRAME.y0 + 10, rail_x0, (RESERVED.y0 - 6) if slot else FRAME.y1 - 8)
     s = min(area.width / vb.width, area.height / vb.height)
     placed = None
-    while s > 0.2:
+    if tpl.get('fit_search'):
+        # sheets whose views fill the whole page: instead of shrinking around the centre until the drawing clears the
+        # Kangsheng title block, look for the largest scale at which SOME position clears it (real line geometry, not path boxes)
+        import numpy as np
+        cs = 2.0
+        Wc = int(vb.width / cs) + 3; Hc = int(vb.height / cs) + 3
+        occ = np.zeros((Hc, Wc), dtype=np.int32)
+        for b_ in views:
+            for i in b_['idx']:
+                for it in keep[i]['items']:
+                    if it[0] == 'l': pts = [it[1], it[2]]
+                    elif it[0] == 'c': pts = it[1:5]
+                    elif it[0] == 're': pts = [it[1].tl, it[1].br]
+                    elif it[0] == 'qu': pts = [it[1].ul, it[1].lr, it[1].ur, it[1].ll]
+                    else: continue
+                    x0_ = min(q.x for q in pts); x1_ = max(q.x for q in pts); y0_ = min(q.y for q in pts); y1_ = max(q.y for q in pts)
+                    occ[max(0, int((y0_ - vb.y0) / cs)):int((y1_ - vb.y0) / cs) + 1, max(0, int((x0_ - vb.x0) / cs)):int((x1_ - vb.x0) / cs) + 1] = 1
+        P = np.zeros((Hc + 1, Wc + 1), dtype=np.int64); P[1:, 1:] = occ.cumsum(0).cumsum(1)
+        def busy(sx0, sy0, sx1, sy1):
+            gx0 = max(0, int(np.floor((sx0 - vb.x0) / cs))); gy0 = max(0, int(np.floor((sy0 - vb.y0) / cs)))
+            gx1 = min(Wc, int(np.ceil((sx1 - vb.x0) / cs))); gy1 = min(Hc, int(np.ceil((sy1 - vb.y0) / cs)))
+            if gx1 <= gx0 or gy1 <= gy0: return False
+            return (P[gy1, gx1] - P[gy0, gx1] - P[gy1, gx0] + P[gy0, gx0]) > 0
+        RS = fitz.Rect(RESERVED.x0 - 3, RESERVED.y0 - 3, RESERVED.x1 + 3, RESERVED.y1 + 3)
+        s_try = s
+        while s_try > 0.2 and placed is None:
+            w_, h_ = vb.width * s_try, vb.height * s_try
+            xs = np.linspace(area.x0, max(area.x0, area.x1 - w_), 25); ys = np.linspace(area.y0, max(area.y0, area.y1 - h_), 25)
+            cx_, cy_ = area.x0 + (area.width - w_) / 2, area.y0 + max(0, (area.height - h_) / 2)
+            cand = sorted(((ox_ - cx_) ** 2 + (oy_ - cy_) ** 2, ox_, oy_) for ox_ in xs for oy_ in ys)
+            for _, ox_, oy_ in cand:
+                if not busy((RS.x0 - ox_) / s_try + vb.x0, (RS.y0 - oy_) / s_try + vb.y0, (RS.x1 - ox_) / s_try + vb.x0, (RS.y1 - oy_) / s_try + vb.y0):
+                    placed = (s_try, fitz.Matrix(s_try, 0, 0, s_try, ox_ - vb.x0 * s_try, oy_ - vb.y0 * s_try)); break
+            s_try *= 0.99
+    while placed is None and s > 0.2:
         ox = area.x0 + (area.width - vb.width * s) / 2; oy = area.y0 + max(0, (area.height - vb.height * s) / 2)
         m = fitz.Matrix(s, 0, 0, s, ox - vb.x0 * s, oy - vb.y0 * s)
         if not any((rects[i] * m).intersects(RESERVED) for b_ in views for i in b_['idx']):
