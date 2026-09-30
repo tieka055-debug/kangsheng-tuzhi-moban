@@ -6,7 +6,7 @@
 - 模板 24 个（`families/cad_templates.json`），图框指纹约 240 个样本（`families/cad_signatures.json`，每个约 400 字节）。
 - 这次新增模板：`SU_sunup`（SUN UP/Sanap）、`KH_keheng`（科横）、`RQ_runqing`（润擎/鼎端 B01M，需 `frame_search` 0.3），以及之前的绿丰、永辉DC、创勤阜平、高高达、协展、创业、艾联特；`KS_kangsheng_old`（康生旧款）是本机另一处修改并入的。
 - 新增通用能力：`frame_search`（大字写在框外时找真正内框）、NO_ROOM 自动改用 `fit_search`、缩放下限随原图单位（`s_floor`）、`width_cap`、`layout: "sheet"`、`rail_pull`、`rail_margin`、`views_top`、`round_joins`。
-- 回归：26 个旧任务新旧代码输出完全一致（并入 `KS_kangsheng_old` 那一步只跑了单元测试，没有重跑这 26 个，**下次先补跑**）。
+- 回归：26 个旧任务，基线 5446aec vs 当前 HEAD（含并入的 `KS_kangsheng_old`）输出完全一致，0 个不同（2026-09-30 已补跑）。回归包（原图是业务数据，不进仓库）在 Mac 的 `~/Documents/康生图纸模版/regression_pack.zip`，解压后运行：`python tools/regress.py 解压目录 [--base 5446aec] [--jobs 4]`，有差异退出码为 1。以后每次改 `cad_family.py` 或模板开关都先跑它。
 
 ## 用户的固定要求（不要再问）
 1. 标题用图纸自己的品名（DC电源插座 / 电池连接器 / USB连接器…），不用默认「连接器」；看不出来才问。
@@ -38,7 +38,7 @@ B_yellow_grid_wjh：0016 0018 0019 0021 0022 0023 0030 0033 0050 0060 0071–007
 D_dingduan：0532 0569 0570 0587　A_rohs_top_left：0107 0115　N_nd_cad2pdf：0027 0037
 
 ## 建议的做法
-1. 先 `python -m unittest discover -s tests`，再按 `SKILL.md`「处理原则」最后一条补跑 26 个旧任务回归。
+1. 先 `python -m unittest discover -s tests`，再用 `tools/regress.py` 跑 26 个旧任务回归（见上）。
 2. 批量判图框：`python tools/survey_classify.py PDF目录 结果.json`（可断点续跑）。
 3. 新图框流程：`tools/grid_preview.py 原图.pdf 预览.png [--rotate N] [--search 0.3]` 看网格 → 把标题栏/修订栏/RoHS/水印写成 `furniture_frac` → 试跑 2–3 张对照 → 合格后 `frame_match.py --learn 模板名 原图.pdf [--rotate N] [--search 0.3]`。
 4. 判定失败或 NO_ROOM 时先看内框有没有找对（`grid_preview`），再看模板比例；不要为单张图改代码。
