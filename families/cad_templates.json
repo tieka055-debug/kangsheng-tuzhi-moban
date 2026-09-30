@@ -560,6 +560,32 @@
      1
     ]
    ]
+  },
+  "KS_kangsheng_old": {
+   "desc": "康生旧款图框（深圳市康生电子科技有限公司，Foxit 编辑过的 PDF）：左上「客户确认签章处」，右上 版本/修改记事/修改者/日期 修订栏，右下 公司名 + TITLE/PART No/DRAW-CHECK-APPRO + GENERAL TOLERANCE 标题栏；Foxit 水印和顶部图片在外框外",
+   "furniture_frac": [
+    [
+     0.0,
+     0.0,
+     0.17,
+     0.075
+    ],
+    [
+     0.635,
+     0.0,
+     1.0,
+     0.09
+    ],
+    [
+     0.615,
+     0.85,
+     1.0,
+     1.0
+    ]
+   ],
+   "rail_cap": 0.85,
+   "views_top": true,
+   "round_joins": true
   }
  }
 }

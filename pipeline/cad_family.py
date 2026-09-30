@@ -578,6 +578,8 @@ def run(job, out, font, font_index=0):
     if tpl.get('fit_search'): placed = _fit_search(placed)
     while placed is None and s > s_floor:
         ox = area.x0 + (area.width - vb.width * s) / 2; oy = area.y0 + max(0, (area.height - vb.height * s) / 2)
+        if tpl.get('views_top'):   # tall view stacks: hang from the top so only the bottom has to clear the title block
+            oy = area.y0
         m = fitz.Matrix(s, 0, 0, s, ox - vb.x0 * s, oy - vb.y0 * s)
         if not any((rects[i] * m).intersects(RESERVED) for b_ in views for i in b_['idx']):
             placed = (s, m); break
@@ -616,8 +618,10 @@ def run(job, out, font, font_index=0):
         fil = mapc(d.get('fill')) if t in ('f', 'fs') else None
         w = max((d.get('width') or 0) * s, 0.4)
         if tpl.get('width_cap'): w = min(w, tpl['width_cap'])   # some CAD exports draw leaders/table frames 4-7x heavier than the rest
+        # text outlined as tiny stroked triangles (e.g. Foxit-edited PDFs) needs round joins/caps: mitred joins grow spikes
+        lj = lc = 1 if tpl.get('round_joins') else 0
         sh.finish(color=col, fill=fil, width=w, closePath=d.get('closePath', False),
-                  even_odd=d.get('even_odd', False), lineCap=0, lineJoin=0)
+                  even_odd=d.get('even_odd', False), lineCap=lc, lineJoin=lj)
     sh.commit()
     # Kangsheng frame + title
     ff = Path(font)

@@ -171,6 +171,7 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 | `KH_keheng` | 惠州科横/科衡图框：8 格数字/字母框，右上修订栏，顶部 RoHS 小框，右下标题栏 |
 | `RQ_runqing` | 润擎/鼎端 B01M 系列图框：黄色外框+黑色内框，框外上方有超大型号字，需 `frame_search` 0.3；右上修订栏，右下 logo+标题栏 |
 | `N_nd_cad2pdf` | 诺德 cad2pdf 图框（字母列头 F…A，右上 RoHS+修订栏，底部整条公司名/标题栏）；一页多图时用 job 的 clip 指定单张 |
+| `KS_kangsheng_old` | 康生旧款图框（深圳市康生电子科技有限公司，Foxit 编辑过）：左上「客户确认签章处」，右上修订栏，右下公司名+TITLE/PART No+GENERAL TOLERANCE 标题栏；文字为细小三角形轮廓，模板开关 `round_joins`（圆角连接，避免字形出毛刺）、`views_top`（视图组靠上排，只让底部避开康生标题栏） |
 
 **模板开关（写在模板里，只对该图框生效）：** `bottom_slot`、`table_band_top`、`frame_pad`、`rail_cap`（右栏字不超过图的放大倍数×该值）、`join_line_pieces`、`split_paths`、`rail_stack`、`line_extent_fix`、`width_cap`（输出线宽上限）、`layout: "sheet"`（保持整页布局，不拉右栏）、`fit_search`（在标题栏外找最大可放缩放；不写时若普通缩放放不下会自动启用）、`rail_pull`（[[x0,y0,x1,y1],…]：这些区域的东西拉到右栏最上面，例如 PIN 表）、`rail_margin`、`frame_search`（内框搜索带，默认 0.12；大字写在框外的图用 0.3）。
 
