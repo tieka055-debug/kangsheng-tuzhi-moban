@@ -67,7 +67,7 @@ def long_lines(D, orient, min_len, lo=None, hi=None):
     return out
 
 
-def analyse(page, furniture_frac=None, frame_bottom=None, clip=None):
+def analyse(page, furniture_frac=None, frame_bottom=None, clip=None, search=0.12):
     D = page.get_drawings()
     if clip:   # several sheets on one page: work on one of them
         C = fitz.Rect(clip); D = [d for d in D if C.contains(d['rect'])]
@@ -75,10 +75,10 @@ def analyse(page, furniture_frac=None, frame_bottom=None, clip=None):
     for d in D: bb |= d['rect']
     # inner frame: the innermost of the long border lines on each side
     H = long_lines(D, 'H', 0.6 * bb.width); V = long_lines(D, 'V', 0.6 * bb.height)
-    tops = [y for _, _, y in H if y < bb.y0 + 0.12 * bb.height]
-    bots = [y for _, _, y in H if y > bb.y1 - 0.12 * bb.height]
-    lefs = [x for _, _, x in V if x < bb.x0 + 0.12 * bb.width]
-    rigs = [x for _, _, x in V if x > bb.x1 - 0.12 * bb.width]
+    tops = [y for _, _, y in H if y < bb.y0 + search * bb.height]
+    bots = [y for _, _, y in H if y > bb.y1 - search * bb.height]
+    lefs = [x for _, _, x in V if x < bb.x0 + search * bb.width]
+    rigs = [x for _, _, x in V if x > bb.x1 - search * bb.width]
     if not (tops and bots and lefs and rigs): raise SystemExit('FRAME_NOT_FOUND')
     y1 = min(bots)
     if frame_bottom == 'title_top':
@@ -145,6 +145,7 @@ def run(job, out, font, font_index=0):
             raise SystemExit(f"{auto['status']}: 图框和已登记的模板对不上或不唯一（最像 {auto['template']}，分数 {auto['score']}，次像 {auto['runner_up']}）。"
                              "按 SKILL.md「新建模板」做模板，再用 frame_match.py --learn 登记；不要硬做。")
         job = dict(job, template=auto['template'])
+        if auto.get('search') and 'frame_search' not in job: job['frame_search'] = auto['search']
         if 'rotate' not in job: job['rotate'] = auto['rotate']
     probe = fitz.open(src_path)
     if probe[0].get_text('words'):
@@ -163,7 +164,7 @@ def run(job, out, font, font_index=0):
     if job.get('template'):
         tpl = json.loads((ROOT / 'families' / 'cad_templates.json').read_text())['templates'][job['template']]
         ff = tpl['furniture_frac']
-    D, bb, I, furn = analyse(page, ff, job.get('frame_bottom'), job.get('clip'))
+    D, bb, I, furn = analyse(page, ff, job.get('frame_bottom'), job.get('clip'), job.get('frame_search') or tpl.get('frame_search', 0.12))
     keep, dropped = [], collections.Counter()
     def trim(it):
         # an axis-aligned rule running from the drawing into a removed supplier area stops at that area's edge
@@ -538,7 +539,8 @@ def run(job, out, font, font_index=0):
     area = fitz.Rect(FRAME.x0 + 10, FRAME.y0 + 10, rail_x0, (RESERVED.y0 - 6) if slot else FRAME.y1 - 8)
     s = min(area.width / vb.width, area.height / vb.height)
     placed = None
-    if tpl.get('fit_search'):
+    s_floor = min(0.2, 0.2 * s)   # sources drawn at 1:1 in metres/large units start far below 1
+    def _fit_search(placed):
         # sheets whose views fill the whole page: instead of shrinking around the centre until the drawing clears the
         # Kangsheng title block, look for the largest scale at which SOME position clears it (real line geometry, not path boxes)
         import numpy as np
@@ -563,7 +565,7 @@ def run(job, out, font, font_index=0):
             return (P[gy1, gx1] - P[gy0, gx1] - P[gy1, gx0] + P[gy0, gx0]) > 0
         RS = fitz.Rect(RESERVED.x0 - 3, RESERVED.y0 - 3, RESERVED.x1 + 3, RESERVED.y1 + 3)
         s_try = s
-        while s_try > 0.2 and placed is None:
+        while s_try > s_floor and placed is None:
             w_, h_ = vb.width * s_try, vb.height * s_try
             xs = np.linspace(area.x0, max(area.x0, area.x1 - w_), 25); ys = np.linspace(area.y0, max(area.y0, area.y1 - h_), 25)
             cx_, cy_ = area.x0 + (area.width - w_) / 2, area.y0 + max(0, (area.height - h_) / 2)
@@ -572,13 +574,19 @@ def run(job, out, font, font_index=0):
                 if not busy((RS.x0 - ox_) / s_try + vb.x0, (RS.y0 - oy_) / s_try + vb.y0, (RS.x1 - ox_) / s_try + vb.x0, (RS.y1 - oy_) / s_try + vb.y0):
                     placed = (s_try, fitz.Matrix(s_try, 0, 0, s_try, ox_ - vb.x0 * s_try, oy_ - vb.y0 * s_try)); break
             s_try *= 0.99
-    while placed is None and s > 0.2:
+        return placed
+    if tpl.get('fit_search'): placed = _fit_search(placed)
+    while placed is None and s > s_floor:
         ox = area.x0 + (area.width - vb.width * s) / 2; oy = area.y0 + max(0, (area.height - vb.height * s) / 2)
         m = fitz.Matrix(s, 0, 0, s, ox - vb.x0 * s, oy - vb.y0 * s)
         if not any((rects[i] * m).intersects(RESERVED) for b_ in views for i in b_['idx']):
             placed = (s, m); break
         s *= 0.98
-    if placed is None: raise SystemExit('NO_ROOM')
+    if placed is None and not tpl.get('fit_search'):   # views fill the sheet and the plain shrink-around-centre cannot clear the title block: search positions instead of giving up
+        placed = _fit_search(placed)
+    if placed is None:
+        if os.environ.get('CAD_DEBUG'): print('NOROOM', vb, area, s, RESERVED, len(views), file=sys.stderr)
+        raise SystemExit('NO_ROOM')
     s, m = placed
     for b_ in views:
         for i in b_['idx']: mats[i] = (m, s)

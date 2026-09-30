@@ -8,13 +8,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'pipeline'))
 from cad_family import analyse
 
 ap = argparse.ArgumentParser(); ap.add_argument('pdf'); ap.add_argument('png')
-ap.add_argument('--rotate', type=int, default=0); ap.add_argument('--clip'); ap.add_argument('--frame-bottom')
+ap.add_argument('--rotate', type=int, default=0); ap.add_argument('--clip'); ap.add_argument('--frame-bottom'); ap.add_argument('--search', type=float, default=0.12)
 a = ap.parse_args()
 p = fitz.open(a.pdf)[0]
 if a.rotate: p.set_rotation((p.rotation + a.rotate) % 360)
 if p.rotation: p.remove_rotation()
 clip = [float(v) for v in a.clip.split(',')] if a.clip else None
-D, bb, I, _ = analyse(p, [[0, 0, 0.01, 0.01]], a.frame_bottom, clip)
+D, bb, I, _ = analyse(p, [[0, 0, 0.01, 0.01]], a.frame_bottom, clip, a.search)
 print('inner frame', I)
 sh = p.new_shape()
 for k in range(1, 20):

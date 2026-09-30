@@ -511,6 +511,55 @@
      1
     ]
    ]
+  },
+  "KH_keheng": {
+   "desc": "惠州科横/科衡(KeHeng)图框：8 格数字/字母框，右上 REV/ECN/LOCATIONS 修订栏，顶部 RoHS Compliant 小框，右下 MODEL/MATERIAL/公差 标题栏；NOTE 说明、PIN 表、PCB 图保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.38,
+     0.005,
+     0.535,
+     0.068
+    ],
+    [
+     0.596,
+     0,
+     1,
+     0.068
+    ],
+    [
+     0.56,
+     0.83,
+     1,
+     1
+    ]
+   ]
+  },
+  "RQ_runqing": {
+   "desc": "润擎/鼎端 B01M 系列图框（黄色外框+黑色内框，框外上方有超大型号字；需 frame_search 0.3 才能找到真正内框）：右上 REV/DESCRIPTION 修订栏，右下公司 logo+标题栏+公差栏；Dimension 表、材料说明、PCB 图保留",
+   "fit_search": true,
+   "frame_search": 0.3,
+   "furniture_frac": [
+    [
+     0.72,
+     0,
+     1,
+     0.068
+    ],
+    [
+     0.655,
+     0.803,
+     1,
+     1
+    ],
+    [
+     0.54,
+     0.885,
+     0.66,
+     1
+    ]
+   ]
   }
  }
 }

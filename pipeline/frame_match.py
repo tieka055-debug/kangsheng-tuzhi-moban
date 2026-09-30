@@ -18,12 +18,13 @@ from cad_family import analyse, long_lines
 N = 40
 SIGS = HERE.parent / 'families' / 'cad_signatures.json'
 ROTS = (0, 90, 180, 270)
+SEARCHES = (0.12, 0.30)
 
 
-def _grids(page, clip=None):
+def _grids(page, clip=None, search=0.12):
     """(Hgrid, Vgrid) as sets of (ix, iy) cells relative to the inner frame; None if no frame is found"""
     try:
-        D, bb, I, _ = analyse(page, [[0, 0, 0.01, 0.01]], None, clip)
+        D, bb, I, _ = analyse(page, [[0, 0, 0.01, 0.01]], None, clip, search)
     except SystemExit:
         return None
     if I.width < 50 or I.height < 50: return None
@@ -89,45 +90,49 @@ def candidates(pdf, clip=None, page_no=0):
         p = doc[page_no]
         p.set_rotation((p.rotation + r) % 360)
         if p.rotation: p.remove_rotation()
-        g = _grids(p, clip)
+        gs = {}
+        for se in SEARCHES:   # a big title/label outside the sheet border pushes the border out of the usual 12% search band
+            gs[se] = _grids(p, clip, se)
         doc.close(); doc = fitz.open(pdf)
-        if g is not None: out.append((r, g))
+        for se, g in gs.items():
+            if g is not None: out.append((r, g, se))
     return out
 
 
 def match(pdf, clip=None, page_no=0, sigs=None, exclude=None):
     """-> {'template','rotate','score','runner_up':(template,score),'status'}"""
     sigs = sigs or load(); best = []
-    for r, g in candidates(pdf, clip, page_no):
+    for r, g, se in candidates(pdf, clip, page_no):
         for s in sigs['samples']:
             if exclude and s.get('id') == exclude: continue
-            best.append((score_arr(_arr(g), _unpack_arr(s['G'])), r, s['template']))
+            if s.get('search', 0.12) != se: continue
+            best.append((score_arr(_arr(g), _unpack_arr(s['G'])), r, s['template'], se))
     if not best: return {'status': 'NO_FRAME', 'template': None, 'rotate': None, 'score': 0}
     best.sort(reverse=True)
-    sc, r, t = best[0]
-    ru = next(((tt, ss) for ss, rr, tt in best if tt != t), (None, 0))
+    sc, r, t, se = best[0]
+    ru = next(((tt, ss) for ss, rr, tt, _ in best if tt != t), (None, 0))
     st = 'OK' if sc >= 0.90 and sc - ru[1] >= 0.03 else ('AMBIGUOUS' if sc >= 0.90 else 'UNKNOWN_FRAME')
-    return {'status': st, 'template': t, 'rotate': r, 'score': round(sc, 3), 'runner_up': [ru[0], round(ru[1], 3)]}
+    return {'status': st, 'template': t, 'rotate': r, 'score': round(sc, 3), 'runner_up': [ru[0], round(ru[1], 3)], 'search': se}
 
 
-def learn(template, pdf, rotate=0, clip=None, page_no=0, sid=None):
+def learn(template, pdf, rotate=0, clip=None, page_no=0, sid=None, search=0.12):
     doc = fitz.open(pdf); p = doc[page_no]
     if rotate: p.set_rotation((p.rotation + rotate) % 360)
     if p.rotation: p.remove_rotation()
-    g = _grids(p, clip)
+    g = _grids(p, clip, search)
     if g is None: raise SystemExit('FRAME_NOT_FOUND')
     sigs = load()
-    sigs['samples'].append({'id': sid or Path(pdf).name, 'template': template, 'rotate_hint': rotate, 'G': _pack(g)})
+    sigs['samples'].append({'id': sid or Path(pdf).name, 'template': template, 'rotate_hint': rotate, 'search': search, 'G': _pack(g)})
     json.dump(sigs, open(SIGS, 'w'), ensure_ascii=False)
 
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('pdf', nargs='?'); ap.add_argument('--clip'); ap.add_argument('--page', type=int, default=0)
-    ap.add_argument('--learn'); ap.add_argument('--rotate', type=int, default=0); ap.add_argument('--report', action='store_true')
+    ap.add_argument('--learn'); ap.add_argument('--rotate', type=int, default=0); ap.add_argument('--report', action='store_true'); ap.add_argument('--search', type=float, default=0.12)
     a = ap.parse_args()
     clip = [float(v) for v in a.clip.split(',')] if a.clip else None
     if a.report:
         import collections
         print(collections.Counter(s['template'] for s in load()['samples'])); sys.exit()
-    if a.learn: learn(a.learn, a.pdf, a.rotate, clip, a.page); print('learned', a.learn)
+    if a.learn: learn(a.learn, a.pdf, a.rotate, clip, a.page, search=a.search); print('learned', a.learn)
     else: print(json.dumps(match(a.pdf, clip, a.page), ensure_ascii=False))
