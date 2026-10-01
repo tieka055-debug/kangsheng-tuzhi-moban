@@ -719,6 +719,183 @@
     ]
    ],
    "width_cap": 1.2
+  },
+  "CQ_chart_dwg": {
+   "desc": "创勤/鑫风雷 USB 图框（原图竖放，rotate 270）：字母/数字格外框，右下「产品图 PRODUCT CHART DWG+公差一览表+公司名」标题栏，右上 MAPX/MODIFICATION/DATE 修订栏，左上 RoHS+客户图（有的图没有）；说明/规格书文字、PCB 图保留；上下格号带（检测到的内框含格号带时）用窄带去掉",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.478,
+     0.815,
+     1,
+     1
+    ],
+    [
+     0.634,
+     0,
+     1,
+     0.1
+    ],
+    [
+     0,
+     0,
+     0.25,
+     0.065
+    ],
+    [
+     0,
+     0,
+     1,
+     0.035
+    ],
+    [
+     0,
+     0.962,
+     1,
+     1
+    ]
+   ],
+   "layout": "sheet"
+  },
+  "WJ_black_dwg": {
+   "desc": "黑底 DWG 导出图框（白色框线/绿色尺寸/洋红端子）：字母 F…A/数字 1…4 外框，顶部 RoHS Compliant 小框，右上 SYMBOL/REVISION/APPROVAL/DATE 修订栏，底部 PART NAME/TOLERANCE 标题栏（顶线横贯整宽但分两段，不能用 title_top），左下 COPYRIGHT 声明；标题栏上方零件表(NO./PARTS/MATERIAL/QTY/FINISHING)保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.58,
+     0,
+     0.66,
+     0.062
+    ],
+    [
+     0.65,
+     0,
+     1,
+     0.095
+    ],
+    [
+     0.44,
+     0.896,
+     1,
+     1
+    ],
+    [
+     0,
+     0.892,
+     0.46,
+     1
+    ]
+   ]
+  },
+  "MU_black_cadgen": {
+   "desc": "黑底白线 CAD 图框（页面很小，白色粗线）：字母 A…E/数字 1…7 外框，左上「CAD GENERATED DRAWING」备注，右上 REV./ECN NO./APPD. 修订栏，右下标题栏（公差表+MAT'L/FINISH/QTY+PART NO/TITLE/DWG NO）；其上方零件表(ITEM/PART NAME/Q'TY/FINISH/NOTE)保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0,
+     0,
+     0.21,
+     0.045
+    ],
+    [
+     0.89,
+     0,
+     1,
+     0.052
+    ],
+    [
+     0.528,
+     0.797,
+     1,
+     1
+    ]
+   ]
+  },
+  "LT_lituo": {
+   "desc": "利托(LITUO)微动开关图框：整页外框，左上「CAD FILE:」小框（含投影符号），右下标题栏（TOLERANCE/ISSUE/DESCRIPTIONS OF REVISION/TITLE·MODEL/公司 logo/DWN·CHK'D·APPD.）；左下零件表(NO./PARTS/MATERIALS/Q'TY/FINISH)和右上 SCHEMATIC 电路图框保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0,
+     0,
+     0.366,
+     0.04
+    ],
+    [
+     0.488,
+     0.782,
+     1,
+     1
+    ]
+   ],
+   "round_joins": true
+  },
+  "HL_holy": {
+   "desc": "宏利(Holy)图框：字母 A…F/数字 1…5 格号外框，右下标题栏（公司名、一般公差 TOLERANCES、检验尺寸标示、品名/图号/比例/签名），底部中间修订栏（修订摘要/日期/签名）；右侧 P数/A/B 尺寸表和 Specifications 说明保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.676,
+     0.82,
+     1,
+     1
+    ],
+    [
+     0.405,
+     0.925,
+     0.68,
+     1
+    ]
+   ]
+  },
+  "PS_pinshang": {
+   "desc": "品尚(Pinshang)图框（和凯拓林「结构图面」同款，但「结构图面」标题框更高）：右下 QUALITY/TOLERANCE 标题栏（GENERAL TOLERANCES/公司名/PART NO），右上「结构图面」+REV/DESCRIPTION 修订栏，左上 RoHS Compliant；备注与 P.C.B LAYOUT 说明保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.53,
+     0.815,
+     1,
+     1
+    ],
+    [
+     0.558,
+     0,
+     1,
+     0.07
+    ],
+    [
+     0,
+     0,
+     0.2,
+     0.07
+    ]
+   ]
+  },
+  "LH_dc_upright": {
+   "desc": "乐鸿 DC 插座图框（页内小幅横放、不需转；内外双框，需 job.clip 圈住外框，如 [5,223,591,620]）：底部整条标题栏，右上「一般尺寸公差」表，左上小空框；零件表保留；整页布局（右栏重排会拆散说明文字）",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0,
+     0.86,
+     1,
+     1
+    ],
+    [
+     0.6,
+     0,
+     1,
+     0.055
+    ],
+    [
+     0,
+     0,
+     0.095,
+     0.04
+    ]
+   ],
+   "layout": "sheet"
   }
  }
 }

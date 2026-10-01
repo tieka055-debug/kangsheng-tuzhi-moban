@@ -176,8 +176,17 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 | `LH_dc_vertical` | 乐鸿/竖排 DC·耳机插座框（原图竖放，rotate 270）：底部整条标题栏，右上「一般尺寸公差」表，左上小空框；右下零件表保留 |
 | `DC1_bom_br` / `DC2_leftcol` / `DC3_jack_en` / `DC4_std_br` | 四种 DC 插座框（0185 / 0189 / 0279 / 0241 型）：右下或底部标题栏+公差栏去掉，零件表保留；前三种原图竖放 rotate 270；DC2/DC3/DC4 用 `layout: "sheet"`（右栏逻辑会把小符号放得过大） |
 | `LF_lvfeng_inner` | 绿丰图框变体：零件表+标题栏在内框下沿之内，模板自带 `frame_bottom: "title_top"`、`layout: "sheet"`、`width_cap` 1.2（不加 width_cap 会有线变粗） |
+| `CQ_chart_dwg` | 创勤/鑫风雷 USB 图框（原图竖放，rotate 270）：右下「产品图 PRODUCT CHART DWG+公差一览表+公司名」标题栏，右上 MAPX/MODIFICATION 修订栏，左上 RoHS+客户图；检测到的内框含格号带，用上下窄带去掉；`layout: "sheet"` |
+| `WJ_black_dwg` | 黑底 DWG 导出图框（白框线/绿尺寸/洋红端子，页面 7257×4535）：顶部 RoHS Compliant 小框、右上修订栏、底部标题栏+COPYRIGHT；标题栏顶线分两段，不能用 title_top |
+| `MU_black_cadgen` | 黑底白线 CAD 图框（页面仅 193×138，粗白线）：左上 CAD GENERATED 备注、右上 REV./ECN NO. 修订栏、右下标题栏；零件表保留 |
+| `LT_lituo` | 利托(LITUO)微动开关图框：左上「CAD FILE:」小框、右下标题栏（TOLERANCE/修订/公司 logo/签名）；左下零件表、右上 SCHEMATIC 框保留；字是粗描边三角形，需 `round_joins` |
+| `HL_holy` | 宏利(Holy)图框：字母/数字格号外框，右下标题栏（公司名/一般公差/检验标示）+底部修订栏；右侧 P数/A/B 尺寸表保留（标题栏上沿要放在表底与标题栏顶线之间，取 0.82） |
+| `PS_pinshang` | 品尚图框（凯拓林「结构图面」同款，标题框更高）：右下 QUALITY/TOLERANCE 标题栏，右上「结构图面」+修订栏，左上 RoHS |
+| `LH_dc_upright` | 乐鸿 DC 插座框的「不转、整页布局」版：原图是内外双框，需 job `clip` 圈住外框（如 `[5,223,591,620]`），右栏重排会拆散说明文字所以用 `layout: "sheet"` |
 
 **模板开关（写在模板里，只对该图框生效）：** `bottom_slot`、`table_band_top`、`frame_pad`、`rail_cap`（右栏字不超过图的放大倍数×该值）、`join_line_pieces`、`split_paths`、`rail_stack`、`line_extent_fix`、`width_cap`（输出线宽上限）、`layout: "sheet"`（保持整页布局，不拉右栏）、`fit_search`（在标题栏外找最大可放缩放；不写时若普通缩放放不下会自动启用）、`frame_bottom`（模板也可写，job 里的优先；自动判图框时只能靠模板），`rail_pull`（[[x0,y0,x1,y1],…]：这些区域的东西拉到右栏最上面，例如 PIN 表）、`rail_margin`、`frame_search`（内框搜索带，默认 0.12；大字写在框外的图用 0.3）。
+
+**算范围要用线段端点**：0 宽发丝线的 `rect` 高度为 0，`Rect |= rect` 会把它当空矩形忽略，会低估内容范围（clip 取小了会让长线整条被排除、`FRAME_NOT_FOUND`）。
 
 **新建模板：** 用 `tools/grid_preview.py` 看网格，把供应商标题栏、修订栏、RoHS、水印等区域按内框的比例写成 `furniture_frac: [[x0,y0,x1,y1], ...]`（0–1）。同一供应商同一图框只写一次。
 

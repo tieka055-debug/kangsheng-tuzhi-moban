@@ -642,7 +642,7 @@ def run(job, out, font, font_index=0):
                             tolerance_mode='source')
     DT.render_dynamic_tolerance(pg, job['tolerance'], KF.TOLERANCE_BOX)
     out = Path(out); out.mkdir(parents=True, exist_ok=True)
-    pdf = out / f"{job['model']}-康生图纸.pdf"
+    pdf = out / f"{job['model'].replace('/', '_')}-康生图纸.pdf"
     doc.save(pdf, garbage=3, deflate=True)
     rep = {'source': job['source'], 'inner_frame': list(I), 'supplier_furniture_rects': [list(r) for r in furn],
            'paths_total': len(D), 'paths_placed': len(keep), 'dropped': dict(dropped),
@@ -654,7 +654,7 @@ def run(job, out, font, font_index=0):
     rv = fitz.open(); r = rv.new_page(width=1700, height=640)
     r.show_pdf_page(fitz.Rect(5, 20, 845, 635), src, 0, clip=bb)
     r.show_pdf_page(fitz.Rect(855, 20, 1695, 635), doc, 0)
-    r.get_pixmap(dpi=110).save(out / f"{job['model']}-原图对照.png")
+    r.get_pixmap(dpi=110).save(out / f"{job['model'].replace('/', '_')}-原图对照.png")
     print(json.dumps({k: rep[k] for k in ('paths_total', 'paths_placed', 'dropped', 'scale', 'warnings')}, ensure_ascii=False))
     return rep
 
