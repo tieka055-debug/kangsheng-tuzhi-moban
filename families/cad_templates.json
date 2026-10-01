@@ -939,6 +939,93 @@
      1
     ]
    ]
+  },
+  "WJ2_yellow_a4p": {
+   "desc": "W.J.H 黄网格图框的 A4 竖页版（横框画在竖页中下部，字母 A–E/数字 1–7 格号带；文字多为浅绿细线）：右上 REV/DESCRIPTION/DRAW/DATE 修订栏，右下标题栏+左侧 UNLESS OTHERWISE SPECIFIED TOLERANCE；NOTE 与 P.C.B Layout 保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.74,
+     0,
+     1,
+     0.062
+    ],
+    [
+     0.54,
+     0.805,
+     1,
+     1
+    ]
+   ]
+  },
+  "TF_tufu": {
+   "desc": "途富电子(东莞)图框：字母 F…A/数字 1…4 外框（左边常被页面裁掉），左上 RoHS Compliant，右上 SYMBOL/REVISION/APPROVAL/DATE 修订栏，底部整条标题栏（公司名/COPYRIGHT/PART NAME/公差/签名）；标题栏上方零件表(HOUSING/CONTACT TERMINAL)保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0,
+     0,
+     0.075,
+     0.065
+    ],
+    [
+     0.64,
+     0,
+     1,
+     0.074
+    ],
+    [
+     0,
+     0.893,
+     1,
+     1
+    ]
+   ],
+   "bottom_slot": true,
+   "table_band_top": 0.78
+  },
+  "DD2_dingduan_a4p": {
+   "desc": "鼎端(Dingduan)A4 竖页版图框（横框画在竖页中部，框外上方有大号「端子: 型号」文字；需 frame_search 0.3）：右上 REV/DESCRIPTION/DRAW/DATE 修订栏，右下公司 logo+标题栏，左侧 UNLESS OTHERWISE SPECIFIED TOLERANCE；No.of pins/Dimension 表、Material/Specification、P.C.B Layout 保留",
+   "fit_search": true,
+   "frame_search": 0.3,
+   "furniture_frac": [
+    [
+     0.735,
+     0,
+     1,
+     0.062
+    ],
+    [
+     0.655,
+     0.805,
+     1,
+     1
+    ],
+    [
+     0.543,
+     0.888,
+     0.66,
+     1
+    ]
+   ]
+  },
+  "WD_weiding": {
+   "desc": "伟定(WD)图框：字母 E…A/数字 1…7 外框，右上 REV/DESCRIPTION/ECN NO./DATE/DRAWER 修订栏，右下公司 logo+电话+标题栏（公差/ITEM/PART NO./签名）；Notes 与订购编号表、PCB Layout 保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.676,
+     0,
+     1,
+     0.043
+    ],
+    [
+     0.596,
+     0.78,
+     1,
+     1
+    ]
+   ]
   }
  }
 }
