@@ -896,6 +896,49 @@
     ]
    ],
    "layout": "sheet"
+  },
+  "LP_lianpan": {
+   "desc": "联攀/联邦(LianPan·LiaoFeng)图框：数字 1…9/字母 F…A 外框，左上 RoHS Compliant 框，右上 REV./LOCAS./DESCRIPTION 修订栏，底部整条标题栏（REV/UNIT/SCALE/PAGE、GENERAL TOLERANCE、签名、DWG NO./PART NO./TITLE、公司名）；NOTES、Part No./Dim 表、P.C.B. Layout 保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0,
+     0,
+     0.2,
+     0.058
+    ],
+    [
+     0.675,
+     0,
+     1,
+     0.062
+    ],
+    [
+     0,
+     0.887,
+     1,
+     1
+    ]
+   ],
+   "round_joins": true
+  },
+  "ZY_bc_landscape": {
+   "desc": "质源 BC 系列横向图框（内框+外圈格号带，无修订栏）：右下标题栏（未注公差 TOOLERANCE、公司名、品名、图号、签名、比例）；其上方 Pin数/PART NO./DIM 表保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.557,
+     0.8235,
+     1,
+     1
+    ],
+    [
+     0,
+     0.978,
+     1,
+     1
+    ]
+   ]
   }
  }
 }

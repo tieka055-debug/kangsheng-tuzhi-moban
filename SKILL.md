@@ -183,6 +183,8 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 | `HL_holy` | 宏利(Holy)图框：字母/数字格号外框，右下标题栏（公司名/一般公差/检验标示）+底部修订栏；右侧 P数/A/B 尺寸表保留（标题栏上沿要放在表底与标题栏顶线之间，取 0.82） |
 | `PS_pinshang` | 品尚图框（凯拓林「结构图面」同款，标题框更高）：右下 QUALITY/TOLERANCE 标题栏，右上「结构图面」+修订栏，左上 RoHS |
 | `LH_dc_upright` | 乐鸿 DC 插座框的「不转、整页布局」版：原图是内外双框，需 job `clip` 圈住外框（如 `[5,223,591,620]`），右栏重排会拆散说明文字所以用 `layout: "sheet"` |
+| `LP_lianpan` | 联攀/联邦(LianPan·LiaoFeng)图框：左上 RoHS Compliant、右上 REV./LOCAS. 修订栏、底部整条标题栏；NOTES、Part No./Dim 表保留；需 `round_joins` |
+| `ZY_bc_landscape` | 质源 BC 系列图框（同一模板横放不转、竖放 rotate 270 都能用）：右下标题栏（未注公差/公司名/品名/图号），底边格号带用窄带去掉；Pin数/PART NO./DIM 表保留 |
 
 **模板开关（写在模板里，只对该图框生效）：** `bottom_slot`、`table_band_top`、`frame_pad`、`rail_cap`（右栏字不超过图的放大倍数×该值）、`join_line_pieces`、`split_paths`、`rail_stack`、`line_extent_fix`、`width_cap`（输出线宽上限）、`layout: "sheet"`（保持整页布局，不拉右栏）、`fit_search`（在标题栏外找最大可放缩放；不写时若普通缩放放不下会自动启用）、`frame_bottom`（模板也可写，job 里的优先；自动判图框时只能靠模板），`rail_pull`（[[x0,y0,x1,y1],…]：这些区域的东西拉到右栏最上面，例如 PIN 表）、`rail_margin`、`frame_search`（内框搜索带，默认 0.12；大字写在框外的图用 0.3）。
 
