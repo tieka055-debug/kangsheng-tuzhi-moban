@@ -1026,6 +1026,60 @@
      1
     ]
    ]
+  },
+  "CEN_cenlink": {
+   "desc": "欣訊(CEN LINK)图框：字母 E…A/数字 1…7 格号外框，右上 REV/DESCRIPTION/ECN NO./DATE/DRAWER 修订栏，右下 CEN logo+公司名+Title/Dwg No./签名标题栏；Notes（含订购编号图）、Detail、PCB Layout 保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.68,
+     0,
+     1,
+     0.092
+    ],
+    [
+     0.4,
+     0.873,
+     1,
+     1
+    ]
+   ]
+  },
+  "DT_dingte": {
+   "desc": "鼎特(Dingte)图框：整页外框（无格号），右上 REV/ECN NO./DATE 小修订栏，右下 DESCRIPTION/DT P/N/公差/公司名/CAT.NO. 标题栏；四边「由 Autodesk 教育版产品制作」水印；MATERIAL/SPECIFICATION 说明与 PCB Layout 保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.87,
+     0,
+     1,
+     0.05
+    ],
+    [
+     0.364,
+     0.87,
+     1,
+     1
+    ],
+    [
+     0.38,
+     0,
+     0.62,
+     0.022
+    ],
+    [
+     0,
+     0.3,
+     0.02,
+     0.7
+    ],
+    [
+     0.98,
+     0.3,
+     1,
+     0.7
+    ]
+   ]
   }
  }
 }

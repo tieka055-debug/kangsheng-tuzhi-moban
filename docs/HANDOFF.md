@@ -31,7 +31,8 @@
 - 联邦/联攀(0076 1486)→`LP_lianpan`，质源 BC(1336 横放、1434 竖放 270)→`ZY_bc_landscape` 已登记。1334/1622/1696 是 DWG，本机无 dwg2dxf，未做。
 - 飞书「全图纸」表 1274 条、103 家供应商（632 条供应商未填；鼎端/鼎瑞/鼎焺约 300，其余见记忆）；目标是尽量覆盖不同供应商图框。
 
-- 飞书表筛查（2026-10-01）：每家供应商下 1–2 张 PDF，157 张里 40 张已能自动判，其余 UNKNOWN/AMBIGUOUS/NO_FRAME。已补模板：`WJ2_yellow_a4p`(1 17)、`TF_tufu`(69)、`DD2_dingduan_a4p`(42，search 0.3；44 自动命中)、`WD_weiding`(71；72 自动命中)。途富 70（同框、页面左边裁得不同）零件表丢两行，未登记，需要时再调。
+- 飞书表筛查（2026-10-01）：每家供应商下 1–2 张 PDF，157 张里 40 张已能自动判，其余 UNKNOWN/AMBIGUOUS/NO_FRAME。已补模板：`WJ2_yellow_a4p`(1 17)、`TF_tufu`(69)、`DD2_dingduan_a4p`(42，search 0.3；44 自动命中)、`WD_weiding`(71、72)。途富 70（同框、页面左边裁得不同）零件表丢两行，未登记，需要时再调。
+- 同轮又补：`CEN_cenlink`(100 101；105 自动命中)、`DT_dingte`(93)。106、94 等同类框指纹分数偏低要再登记样本。
 - 筛查脚本/下载流程：`lark-cli base +record-list` 导出 供应商+pdf 附件 → `+record-download-attachment` 逐条下载 → `tools/survey_classify.py` 判图框；联系表看图归类。飞书数据不进仓库。
 
 ## 还没做（按优先级）
