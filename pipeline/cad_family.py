@@ -164,7 +164,7 @@ def run(job, out, font, font_index=0):
     if job.get('template'):
         tpl = json.loads((ROOT / 'families' / 'cad_templates.json').read_text())['templates'][job['template']]
         ff = tpl['furniture_frac']
-    D, bb, I, furn = analyse(page, ff, job.get('frame_bottom'), job.get('clip'), job.get('frame_search') or tpl.get('frame_search', 0.12))
+    D, bb, I, furn = analyse(page, ff, job.get('frame_bottom') or tpl.get('frame_bottom'), job.get('clip'), job.get('frame_search') or tpl.get('frame_search', 0.12))
     keep, dropped = [], collections.Counter()
     def trim(it):
         # an axis-aligned rule running from the drawing into a removed supplier area stops at that area's edge

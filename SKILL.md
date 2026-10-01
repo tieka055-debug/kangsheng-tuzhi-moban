@@ -172,8 +172,12 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 | `RQ_runqing` | 润擎/鼎端 B01M 系列图框：黄色外框+黑色内框，框外上方有超大型号字，需 `frame_search` 0.3；右上修订栏，右下 logo+标题栏 |
 | `N_nd_cad2pdf` | 诺德 cad2pdf 图框（字母列头 F…A，右上 RoHS+修订栏，底部整条公司名/标题栏）；一页多图时用 job 的 clip 指定单张 |
 | `KS_kangsheng_old` | 康生旧款图框（深圳市康生电子科技有限公司，Foxit 编辑过）：左上「客户确认签章处」，右上修订栏，右下公司名+TITLE/PART No+GENERAL TOLERANCE 标题栏；文字为细小三角形轮廓，模板开关 `round_joins`（圆角连接，避免字形出毛刺）、`views_top`（视图组靠上排，只让底部避开康生标题栏） |
+| `TC_grid_bomleft` | 字母/数字格外框（F…A / 9…1），右上 REV/ECN/APPD 小修订栏，左上 RoHS，右下 TOLERANCE+APPROVED 标题栏；左下零件/材料表保留（Type-C/USB）；点胶网点是极小描边三角形，需 `round_joins` |
+| `LH_dc_vertical` | 乐鸿/竖排 DC·耳机插座框（原图竖放，rotate 270）：底部整条标题栏，右上「一般尺寸公差」表，左上小空框；右下零件表保留 |
+| `DC1_bom_br` / `DC2_leftcol` / `DC3_jack_en` / `DC4_std_br` | 四种 DC 插座框（0185 / 0189 / 0279 / 0241 型）：右下或底部标题栏+公差栏去掉，零件表保留；前三种原图竖放 rotate 270；DC2/DC3/DC4 用 `layout: "sheet"`（右栏逻辑会把小符号放得过大） |
+| `LF_lvfeng_inner` | 绿丰图框变体：零件表+标题栏在内框下沿之内，模板自带 `frame_bottom: "title_top"`、`layout: "sheet"`、`width_cap` 1.2（不加 width_cap 会有线变粗） |
 
-**模板开关（写在模板里，只对该图框生效）：** `bottom_slot`、`table_band_top`、`frame_pad`、`rail_cap`（右栏字不超过图的放大倍数×该值）、`join_line_pieces`、`split_paths`、`rail_stack`、`line_extent_fix`、`width_cap`（输出线宽上限）、`layout: "sheet"`（保持整页布局，不拉右栏）、`fit_search`（在标题栏外找最大可放缩放；不写时若普通缩放放不下会自动启用）、`rail_pull`（[[x0,y0,x1,y1],…]：这些区域的东西拉到右栏最上面，例如 PIN 表）、`rail_margin`、`frame_search`（内框搜索带，默认 0.12；大字写在框外的图用 0.3）。
+**模板开关（写在模板里，只对该图框生效）：** `bottom_slot`、`table_band_top`、`frame_pad`、`rail_cap`（右栏字不超过图的放大倍数×该值）、`join_line_pieces`、`split_paths`、`rail_stack`、`line_extent_fix`、`width_cap`（输出线宽上限）、`layout: "sheet"`（保持整页布局，不拉右栏）、`fit_search`（在标题栏外找最大可放缩放；不写时若普通缩放放不下会自动启用）、`frame_bottom`（模板也可写，job 里的优先；自动判图框时只能靠模板），`rail_pull`（[[x0,y0,x1,y1],…]：这些区域的东西拉到右栏最上面，例如 PIN 表）、`rail_margin`、`frame_search`（内框搜索带，默认 0.12；大字写在框外的图用 0.3）。
 
 **新建模板：** 用 `tools/grid_preview.py` 看网格，把供应商标题栏、修订栏、RoHS、水印等区域按内框的比例写成 `furniture_frac: [[x0,y0,x1,y1], ...]`（0–1）。同一供应商同一图框只写一次。
 

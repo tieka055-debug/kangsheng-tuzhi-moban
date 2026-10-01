@@ -520,7 +520,7 @@
      0.38,
      0.005,
      0.535,
-     0.068
+     0.08
     ],
     [
      0.596,
@@ -586,6 +586,139 @@
    "rail_cap": 0.85,
    "views_top": true,
    "round_joins": true
+  },
+  "TC_grid_bomleft": {
+   "desc": "字母/数字格外框（F…A / 9…1），右上 REV/ECN/APPD 小修订栏，左上 RoHS 平行四边形，右下 TOLERANCE+APPROVED/PART NAME 标题栏；左下零件/材料表保留（Type-C/USB 系列）",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0,
+     0,
+     0.09,
+     0.06
+    ],
+    [
+     0.84,
+     0,
+     1,
+     0.08
+    ],
+    [
+     0.62,
+     0.79,
+     1,
+     1
+    ]
+   ],
+   "round_joins": true
+  },
+  "LH_dc_vertical": {
+   "desc": "乐鸿/竖排 DC·耳机插座图框（原图竖放，需 rotate 270）：顶/左有十字标记，底部整条标题栏（公司名+产品名称/图号），右上「一般尺寸公差/一般精度公差」表，左上小空框；右下零件表（序号/名称/材料）保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0,
+     0.86,
+     1,
+     1
+    ],
+    [
+     0.6,
+     0,
+     1,
+     0.055
+    ],
+    [
+     0,
+     0,
+     0.095,
+     0.04
+    ]
+   ]
+  },
+  "DC1_bom_br": {
+   "desc": "DC 插座图框（原图竖放，rotate 270）：整页外框，右下标题栏（设计/审核/视角/公差/单位），其正上方零件表（序号/名称/数量/材料）保留；技术特性/要求在左下保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.571,
+     0.902,
+     1,
+     1
+    ]
+   ]
+  },
+  "DC2_leftcol": {
+   "desc": "DC 插座图框（原图竖放，rotate 270）：左上小空框，底部整条标题栏（标记/数量/更改单号/绘图设计审核+图名+阶段标记），左下英文 TOLERANCE 公差框；右中零件表保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.346,
+     0.762,
+     1,
+     1
+    ],
+    [
+     0,
+     0,
+     0.19,
+     0.05
+    ],
+    [
+     0.04,
+     0.92,
+     0.33,
+     1
+    ]
+   ],
+   "layout": "sheet"
+  },
+  "DC3_jack_en": {
+   "desc": "DC POWER JACK 英文图框（原图竖放，rotate 270）：右下 DSND/CHKD/APVD+NAME 标题栏，其左 ANGULAR/UNSPECIFIED TOLERANCE 公差表；零件表(LTR/PART NAME)保留",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.326,
+     0.871,
+     1,
+     1
+    ]
+   ],
+   "layout": "sheet"
+  },
+  "DC4_std_br": {
+   "desc": "DC 插座图框（横放）：整页外框，左上小空框，右下标题栏（更改标记/设计审核工艺标准化批准/图名/等级标记），其上方零件表（序号/名称/材料）保留；技术特性/要求保留",
+   "fit_search": true,
+   "layout": "sheet",
+   "furniture_frac": [
+    [
+     0.534,
+     0.828,
+     1,
+     1
+    ],
+    [
+     0,
+     0,
+     0.128,
+     0.053
+    ]
+   ]
+  },
+  "LF_lvfeng_inner": {
+   "desc": "绿丰(LvFeng)图框变体：零件表+标题栏在内框下沿之内（标题栏顶线为图幅底，frame_bottom=title_top），右上修订栏(修正/描述/日期)；右上主要技术性能/公差表、PCB旁 PIN 表保留；整页布局",
+   "frame_bottom": "title_top",
+   "layout": "sheet",
+   "fit_search": true,
+   "furniture_frac": [
+    [
+     0.745,
+     0,
+     1,
+     0.06
+    ]
+   ],
+   "width_cap": 1.2
   }
  }
 }
