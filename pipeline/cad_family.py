@@ -69,6 +69,8 @@ def long_lines(D, orient, min_len, lo=None, hi=None):
 
 def analyse(page, furniture_frac=None, frame_bottom=None, clip=None, search=0.12):
     D = page.get_drawings()
+    R_ = page.rect
+    D = [d for d in D if R_.x0 - 2 <= (d['rect'].x0 + d['rect'].x1) / 2 <= R_.x1 + 2 and R_.y0 - 2 <= (d['rect'].y0 + d['rect'].y1) / 2 <= R_.y1 + 2] or D   # stray objects far outside the page (editor stamps) must not stretch the frame search
     if clip:   # several sheets on one page: work on one of them
         C = fitz.Rect(clip); D = [d for d in D if C.contains(d['rect'])]
     bb = fitz.Rect()
