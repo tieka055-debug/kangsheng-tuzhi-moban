@@ -137,7 +137,16 @@ def inside_any(r, rects, pad=0.6):
     return any(fitz.Rect(q.x0 - pad, q.y0 - pad, q.x1 + pad, q.y1 + pad).contains(c) for q in rects)
 
 
+def _fix_encoding(o):
+    """部分供应商 CAD 字体把 ± 和 ° 编成了 GBK 乱码（显示为 ¡À / ¡ã）；公差文字照抄时还原成 ± 和 °（只改符号，不改数值）"""
+    if isinstance(o, str): return o.replace('¡À', '±').replace('¡ã', '°')
+    if isinstance(o, list): return [_fix_encoding(x) for x in o]
+    if isinstance(o, dict): return {k: _fix_encoding(v) for k, v in o.items()}
+    return o
+
+
 def run(job, out, font, font_index=0, brand='kangsheng'):
+    if 'tolerance' in job: job = dict(job, tolerance=_fix_encoding(job['tolerance']))
     B = BR.load(brand)   # 品牌配置（默认康生，值与原先写死的完全一致）
     BLUE, GOLD, FRAME, RESERVED = B['blue'], B['gold'], B['frame'], B['reserved']
     KEEPOUT = [RESERVED] + [fitz.Rect(k) for k in B.get('keepout', [])]   # 视图必须避开的品牌图框元素（康生只有标题栏+公差栏）

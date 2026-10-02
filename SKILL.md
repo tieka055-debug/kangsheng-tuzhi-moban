@@ -135,7 +135,7 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 3. **选模板。** 先让程序自动判：`python pipeline/frame_match.py 原图.pdf`（按图框长线条的几何和已做过的图框比对，只用线条，不读文字），job 里 `"template": "auto"`（或不写）时 `cad_family.py` 自己调用它。结果 `OK` 才继续，模板和旋转都会自动用；`AMBIGUOUS`/`UNKNOWN_FRAME`/`NO_FRAME` → **不硬做**，按下面「新建模板」做模板，再用 `frame_match.py --learn 模板名 原图.pdf [--rotate N] [--search 0.3]` 登记；对不上的图不要套最像的模板（会留下供应商标题栏残影）。手动选也行：按下表的图框描述选，拿不准先用 `tools/grid_preview.py 原图.pdf 预览.png [--rotate N] [--search 0.3]` 看网格。
    - **标题**用图纸自己的品名（例如 DC 电源插座、电池连接器、USB 连接器），不要用默认的「连接器」；看不出来就问人。
    - 原图已经是康生图框（标题栏写「深圳市康生电子科技有限公司」）的，不用再转。
-4. **读公差。** 放大原图的公差格（例如 `page.get_pixmap(dpi=600, clip=...)`），逐行照抄到 `tolerance`。字体不支持的符号（如 `≤`、`∠`）改写成 `0~5`、`ANG`，数值不变。
+4. **读公差。**（供应商 CAD 字体有时把 ± 和 ° 编成 GBK 乱码，显示成 `¡À`、`¡ã`：这是编码错误，照抄成 `±`、`°`；程序也会自动还原，数值不变。） 放大原图的公差格（例如 `page.get_pixmap(dpi=600, clip=...)`），逐行照抄到 `tolerance`。字体不支持的符号（如 `≤`、`∠`）改写成 `0~5`、`ANG`，数值不变。
 5. **写 job.json 并运行：**
    ```json
    {"source": "原图.pdf", "model": "型号", "title": "电池连接器", "template": "模板名",
