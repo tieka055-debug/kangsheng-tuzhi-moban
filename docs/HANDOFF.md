@@ -77,3 +77,9 @@ D_dingduan：0532 0569 0570 0587　A_rohs_top_left：0107 0115　N_nd_cad2pdf：
 ## 环境备忘
 - 云端的临时目录（联系表、批量输出）不会保留；Mac 上 `~/Documents/康生图纸模版/work/audit/` 有抽样 PDF、`old.ndjson`（2000 行）、`survey/`（288 张）。
 - 主表/旧「图纸」表的字段与 ID 是业务数据，运行时传参，不写进仓库。
+
+## 2026-10-02 预检（飞书「全图纸」表 tbl839hzF0RNZISr，462 个 PDF）
+自动判结果：OK 178、UNKNOWN_FRAME 170、AMBIGUOUS 48、NO_FRAME 37、几乎无矢量线条(SKIP) 29。
+OK 的 178 张按模板分 22 组，每组抽 2–3 张（分数最低的优先）出测试图看对照图，43 张全部干净：B_yellow_grid_wjh 82, A_letter_frame_parts_table 35, SU_sunup 20, N_nd_letter 7, TF_tufu 4, CEN_cenlink 4, WD_weiding 4, LP_lianpan 4, RQ_runqing 3, A_rohs_top_left 2, LT_lituo 2, LH_dc_vertical 2, N_nd_cad2pdf 2, N_nd_dwg_sheet 1, DD2_dingduan_a4p 1, LH_dc_upright 1, DC3_jack_en 1, LF_lvfeng_inner 1, LF_lvfeng 1, DT_dingte 1。
+**结论：这批表里判成 OK 的，对应模板可信，GPT 可以放心用。** 仅有三处小提示：198/306（B_yellow_grid）视图偏小；141（N_nd_dwg_sheet）左下留一条粗线；N_nd_dwg_sheet / LP_lianpan / MU_black 三个模板的 OK 要多看一眼对照图。
+不能用的：UNKNOWN/AMBIGUOUS/NO_FRAME 共 255 张，聚成 92 类，前几类是联攀(LiaoFeng)图框变体、A 型 Y.C.Zhang 框变体、美金兴(MJ 带水印)等杂牌，各只有几张；GPT 遇到请记进待处理清单，不要硬做。
