@@ -165,6 +165,7 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 - **做法 A（只换图框）**：规格/材料/零件表按原图矢量原样搬进右栏，不重打、不跨型号补值；样张里的 SPECIFICATIONS/BOM 英文重排、`12 V / 12 A`、SOURCE DATE、SCALE、REV 值不生成（飞书表字段重生成那条路 B 未开）。标题栏 PART NAME 用图纸自己的品名，SOURCE REF. P/N 和左上型号都用 job 的 `model`。
 - 公差：写 job 的 `tolerance`（只抄本图），润擎公差栏宽，档位名可以写原图原样；康生栏窄，同一份 job 两个品牌都出时用 `0~5` 这类短写。
 - 颜色映射同康生：黑/灰/主标注色→品牌主色，其他彩色→品牌辅色（润擎为橘色）。
+- 润擎配置打开了 `line_extent_fix`（右栏顶上有修订栏，范围不能算小）并用 `keepout` 让视图避开投影符号；质源 `run_batch.py` 流程只支持康生。两个品牌请输出到不同目录。
 
 ### 图框模板（`families/cad_templates.json`）
 

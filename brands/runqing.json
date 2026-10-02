@@ -12,7 +12,7 @@
  "rail_min_x": 524,
  "views_area": [37, 80, 809, 546],
  "views_area_bottom_with_slot": 418,
- "slot": [37, 428, 537, 545],
+ "slot": [37, 428, 486, 545],
  "background": null,
  "logo": "assets/runqing-logo.png",
  "logo_box": [553, 433.3, 633, 451.3],
@@ -29,5 +29,7 @@
  "grid_label_x": [80.7, 193.2, 305.8, 418.3, 530.9, 643.5, 756.0],
  "grid_label_y": [509.5, 401.2, 293.0, 184.7, 76.5],
  "tolerance_area": [547, 527, 814, 561],
- "tolerance_cols_x": [552, 679]
+ "tolerance_cols_x": [552, 679],
+ "line_extent_fix": true,
+ "keepout": [[489, 533, 522, 552]]
 }

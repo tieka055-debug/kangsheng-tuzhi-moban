@@ -88,6 +88,9 @@ OK 的 178 张按模板分 22 组，每组抽 2–3 张（分数最低的优先�
 - 新增 `--brand runqing`（`cad_family.py`，默认康生，不传行为不变）；品牌配置 `brands/{kangsheng,runqing}.json` + `engine/brand.py`；润擎画框 `engine/frame.py: draw_runqing_frame_and_title()`；logo 自样张导出为 `assets/runqing-logo.png`。判图框三件套（`frame_match.py`、`cad_templates.json`、`cad_signatures.json`）未动。详见 SKILL.md「目标品牌」。
 - 做法 A：只换图框，原图矢量原样搬进右栏。样张 D27M-12Pin-R2（飞书「全图纸」表，原图判 AMBIGUOUS，用 `A_rohs_top_left` 出图，康生版也干净）逐项对上：格号、橘/青蓝双框、左上标题、右上修订栏、右下 logo+标题栏+公差表。差异（有意）：右上 SPECIFICATIONS/RoHS 徽标/电压电流行不生成；修订栏、SOURCE DATE、SCALE、REV 留空（康生同样留空）。
 - 公差：样张用 ≤5 ±0.2 / >5-30 ±0.3 / >30 ±0.5 / ANGLE 0°±3°，与原图 UP TO 5 / ABOVE 5~30 / ABOVE 30 / ANGLE 一致；润擎版按原图读数，两品牌共用 job 时康生栏窄需短写（0~5、5~30、>30）。
-- 回归：康生 26 个任务 0 差异，单测 33 通过。另出 10 张不同图框的润擎预览（本机 `work/runqing_preview/`，不进仓库；9 张预览的公差是占位 PREVIEW/NOT READ，不是真值）。
+- 回归：康生 26 个任务 0 差异，单测 33 通过。另出 10 张不同图框的润擎预览（9 种模板，本机 `work/runqing_preview/`，不进仓库；这 10 张的公差都是占位 PREVIEW/NOT READ，不是真值）。
 - 待用户确认版式后：批量用 `docs/RUNQING_BRAND_TASK.md` 里的 GPT 指令；回填目标字段是飞书表里已有的「润擎图纸」附件字段（字段 ID 运行时传参）。
 - 已知：SU_sunup 第 08 号样本（2006M-5PIN-S1）单独出图 FRAME_NOT_FOUND（框检测与品牌无关，康生同样如此，未处理）。
+- Opus 复查（同日）：S50（SU_sunup）右上 PCB Layout 的虚线框压进润擎修订栏。根因是虚线由 0 宽竖线段组成，`Rect |=` 忽略它们，右栏外包范围算小（SKILL「算范围要用线段端点」）。润擎配置打开 `line_extent_fix`，并加 `keepout`（投影符号）；康生不动。**康生同样有这个隐患**（右栏内容可能越过右栏顶，康生顶上没有修订栏所以不显眼），要修需在康生回归上评估，未做。
+- 质源单页矢量流程（`run_batch.py` / `engine/kangsheng.py`）只支持康生；润擎只走 `cad_family.py`。
+- 同一个 `--out` 目录先后出两个品牌，`report.json`、`title-font.ttf` 会被后出的覆盖，建议分目录。

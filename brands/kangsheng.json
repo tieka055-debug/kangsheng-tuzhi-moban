@@ -2,61 +2,18 @@
  "name": "kangsheng",
  "label": "康生",
  "output_suffix": "康生图纸",
- "blue_rgb255": [
-  6,
-  66,
-  168
- ],
- "gold_rgb255": [
-  217,
-  154,
-  0
- ],
- "frame": [
-  22,
-  29,
-  820,
-  564
- ],
- "reserved": [
-  400,
-  450,
-  820,
-  564
- ],
- "rail": [
-  600,
-  38,
-  814,
-  444
- ],
+ "blue_rgb255": [6, 66, 168],
+ "gold_rgb255": [217, 154, 0],
+ "frame": [22, 29, 820, 564],
+ "reserved": [400, 450, 820, 564],
+ "rail": [600, 38, 814, 444],
  "rail_min_x": 524,
- "views_area": [
-  32,
-  39,
-  812,
-  556
- ],
+ "views_area": [32, 39, 812, 556],
  "views_area_bottom_with_slot": 444,
- "slot": [
-  32,
-  452,
-  390,
-  558
- ],
+ "slot": [32, 452, 390, 558],
  "background": "assets/background.png",
- "title_box": [
-  488,
-  450,
-  820,
-  564
- ],
- "tolerance_box": [
-  400,
-  493,
-  488,
-  564
- ],
+ "title_box": [488, 450, 820, 564],
+ "tolerance_box": [400, 493, 488, 564],
  "logo": "assets/brand-strip.png",
  "compare_suffix": "原图对照"
 }

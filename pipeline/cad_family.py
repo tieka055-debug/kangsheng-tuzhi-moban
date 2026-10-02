@@ -140,6 +140,7 @@ def inside_any(r, rects, pad=0.6):
 def run(job, out, font, font_index=0, brand='kangsheng'):
     B = BR.load(brand)   # 品牌配置（默认康生，值与原先写死的完全一致）
     BLUE, GOLD, FRAME, RESERVED = B['blue'], B['gold'], B['frame'], B['reserved']
+    KEEPOUT = [RESERVED] + [fitz.Rect(k) for k in B.get('keepout', [])]   # 视图必须避开的品牌图框元素（康生只有标题栏+公差栏）
     src_path = job['source']
     auto = None
     if not job.get('template') or job.get('template') == 'auto':
@@ -322,7 +323,8 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         cb = fitz.Rect()
         for d in keep: cb |= d['rect']
     rects = [fitz.Rect(d['rect']) for d in keep]
-    for r in (rects if tpl.get('line_extent_fix') else []):   # a straight line has a zero-width box, which Rect unions silently ignore: give it a hair of size
+    lfix = tpl.get('line_extent_fix') or B.get('line_extent_fix')   # 品牌也可打开（润擎：右栏顶上有修订栏，范围不能算小）
+    for r in (rects if lfix else []):   # a straight line has a zero-width box, which Rect unions silently ignore: give it a hair of size
         if r.width < 0.02: r.x0 -= 0.01; r.x1 += 0.01
         if r.height < 0.02: r.y0 -= 0.01; r.y1 += 0.01
     par = list(range(len(rects)))
@@ -399,10 +401,10 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             if os.environ.get('CAD_DEBUG'): print('SMALL', [round(v, 1) for v in r], bool(side), file=sys.stderr)
             if side:
                 q = side[0]; q['idx'] += b_['idx']; q['r'] |= r; blocks.remove(b_)
-    for b_ in (blocks if tpl.get('line_extent_fix') else []):   # block extents follow their paths
+    for b_ in (blocks if lfix else []):   # block extents follow their paths
         b_['r'] = fitz.Rect()
         for i in b_['idx']: b_['r'] |= rects[i]
-    if tpl.get('line_extent_fix'):
+    if lfix:
         cb = fitz.Rect()
         for b_ in blocks: cb |= b_['r']
     # right column (notes / dimension table / parts list) -> Kangsheng right rail; the rest are views
@@ -568,7 +570,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             gx1 = min(Wc, int(np.ceil((sx1 - vb.x0) / cs))); gy1 = min(Hc, int(np.ceil((sy1 - vb.y0) / cs)))
             if gx1 <= gx0 or gy1 <= gy0: return False
             return (P[gy1, gx1] - P[gy0, gx1] - P[gy1, gx0] + P[gy0, gx0]) > 0
-        RS = fitz.Rect(RESERVED.x0 - 3, RESERVED.y0 - 3, RESERVED.x1 + 3, RESERVED.y1 + 3)
+        KS = [fitz.Rect(q.x0 - 3, q.y0 - 3, q.x1 + 3, q.y1 + 3) for q in KEEPOUT]
         s_try = s
         while s_try > s_floor and placed is None:
             w_, h_ = vb.width * s_try, vb.height * s_try
@@ -576,7 +578,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             cx_, cy_ = area.x0 + (area.width - w_) / 2, area.y0 + max(0, (area.height - h_) / 2)
             cand = sorted(((ox_ - cx_) ** 2 + (oy_ - cy_) ** 2, ox_, oy_) for ox_ in xs for oy_ in ys)
             for _, ox_, oy_ in cand:
-                if not busy((RS.x0 - ox_) / s_try + vb.x0, (RS.y0 - oy_) / s_try + vb.y0, (RS.x1 - ox_) / s_try + vb.x0, (RS.y1 - oy_) / s_try + vb.y0):
+                if not any(busy((RS.x0 - ox_) / s_try + vb.x0, (RS.y0 - oy_) / s_try + vb.y0, (RS.x1 - ox_) / s_try + vb.x0, (RS.y1 - oy_) / s_try + vb.y0) for RS in KS):
                     placed = (s_try, fitz.Matrix(s_try, 0, 0, s_try, ox_ - vb.x0 * s_try, oy_ - vb.y0 * s_try)); break
             s_try *= 0.99
         return placed
@@ -586,7 +588,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         if tpl.get('views_top'):   # tall view stacks: hang from the top so only the bottom has to clear the title block
             oy = area.y0
         m = fitz.Matrix(s, 0, 0, s, ox - vb.x0 * s, oy - vb.y0 * s)
-        if not any((rects[i] * m).intersects(RESERVED) for b_ in views for i in b_['idx']):
+        if not any((rects[i] * m).intersects(K) for K in KEEPOUT for b_ in views for i in b_['idx']):
             placed = (s, m); break
         s *= 0.98
     if placed is None and not tpl.get('fit_search'):   # views fill the sheet and the plain shrink-around-centre cannot clear the title block: search positions instead of giving up
