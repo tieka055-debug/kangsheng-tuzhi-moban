@@ -140,6 +140,9 @@ def inside_any(r, rects, pad=0.6):
 def run(job, out, font, font_index=0, brand='kangsheng'):
     B = BR.load(brand)   # 品牌配置（默认康生，值与原先写死的完全一致）
     BLUE, GOLD, FRAME, RESERVED = B['blue'], B['gold'], B['frame'], B['reserved']
+    model_in_job = job['model']
+    if B.get('model_strip_prefixes'):   # 润擎：供应商自己的型号前缀（TF-/ND-/BG-）不上图、不进文件名
+        job = dict(job, model=BR.brand_model(B, job['model']))
     KEEPOUT = [RESERVED] + [fitz.Rect(k) for k in B.get('keepout', [])]   # 视图必须避开的品牌图框元素（康生只有标题栏+公差栏）
     src_path = job['source']
     auto = None
@@ -658,7 +661,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
            'paths_total': len(D), 'paths_placed': len(keep), 'dropped': dict(dropped),
            'dominant_colour_to_blue': dominant, 'other_colours_to_gold': [k for k in cnt if k != dominant],
            'scale': round(s, 4), 'output': str(pdf), 'auto_match': auto,
-           **({'brand': brand} if brand != 'kangsheng' else {}),
+           **({'brand': brand, 'model_in_job': model_in_job, 'model_on_sheet': job['model']} if brand != 'kangsheng' else {}),
            'warnings': (['SMALL_SCALE: 缩放 < 0.55，视图会偏小，请看对照图'] if s < 0.55 else [])}
     (out / 'report.json').write_text(json.dumps(rep, ensure_ascii=False, indent=1))
     # side-by-side review image

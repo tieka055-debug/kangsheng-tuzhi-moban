@@ -18,3 +18,12 @@ def load(name='kangsheng'):
         if k in cfg:
             b[k] = fitz.Rect(cfg[k])
     return b
+
+
+def brand_model(b, model):
+    """品牌图纸上用的型号：去掉配置里列出的供应商前缀（如润擎去 TF-/ND-/BG-），大小写不敏感，只去开头一个。康生不配置，原样返回。"""
+    m = model.strip()
+    for pre in b.get('model_strip_prefixes', []):
+        if m.upper().startswith(pre.upper()) and len(m) > len(pre):
+            return m[len(pre):].lstrip()
+    return model

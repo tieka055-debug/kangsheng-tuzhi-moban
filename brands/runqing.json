@@ -31,5 +31,6 @@
  "tolerance_area": [547, 527, 814, 561],
  "tolerance_cols_x": [552, 679],
  "line_extent_fix": true,
- "keepout": [[489, 533, 522, 552]]
+ "keepout": [[489, 533, 522, 552]],
+ "model_strip_prefixes": ["TF-", "ND-", "BG-"]
 }

@@ -29,6 +29,15 @@ class BrandConfigTest(unittest.TestCase):
         self.assertNotEqual(b['blue'], KF.BLUE)
         self.assertTrue((ROOT / b['logo']).exists())
 
+    def test_runqing_drops_only_listed_supplier_prefixes(self):
+        b = BR.load('runqing')
+        self.assertEqual(BR.brand_model(b, 'TF-A20F-C系列'), 'A20F-C系列')
+        self.assertEqual(BR.brand_model(b, 'ND-D27M-12Pin-R2'), 'D27M-12Pin-R2')
+        self.assertEqual(BR.brand_model(b, 'bg-A02F-C-S2'), 'A02F-C-S2')
+        for keep in ('DC-002', 'BC-5P-5.0-003', 'LH-DC-022E', 'D27M-12Pin-R2', 'ATF-1'):
+            self.assertEqual(BR.brand_model(b, keep), keep)
+        self.assertEqual(BR.brand_model(BR.load('kangsheng'), 'TF-A20F-C'), 'TF-A20F-C')
+
     def test_unknown_brand_is_rejected(self):
         with self.assertRaises(SystemExit):
             BR.load('nope')
