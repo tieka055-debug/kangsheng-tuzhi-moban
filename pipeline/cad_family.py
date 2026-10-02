@@ -20,6 +20,7 @@ ROOT = HERE.parent
 sys.path.insert(0, str(ROOT / 'engine'))
 import frame as KF                      # noqa: E402
 import dynamic_tolerance as DT          # noqa: E402
+import brand as BR                      # noqa: E402
 
 BLUE = KF.BLUE
 GOLD = (217 / 255, 154 / 255, 0)
@@ -136,7 +137,9 @@ def inside_any(r, rects, pad=0.6):
     return any(fitz.Rect(q.x0 - pad, q.y0 - pad, q.x1 + pad, q.y1 + pad).contains(c) for q in rects)
 
 
-def run(job, out, font, font_index=0):
+def run(job, out, font, font_index=0, brand='kangsheng'):
+    B = BR.load(brand)   # 品牌配置（默认康生，值与原先写死的完全一致）
+    BLUE, GOLD, FRAME, RESERVED = B['blue'], B['gold'], B['frame'], B['reserved']
     src_path = job['source']
     auto = None
     if not job.get('template') or job.get('template') == 'auto':
@@ -474,12 +477,12 @@ def run(job, out, font, font_index=0):
                 q['r'] = fitz.Rect()
                 for i in q['idx']: q['r'] |= rects[i]
     mats = {}
-    RAIL = fitz.Rect(600, 38, 814 - tpl.get('rail_margin', 0), 444)
+    RAIL = fitz.Rect(B['rail'].x0, B['rail'].y0, B['rail'].x1 - tpl.get('rail_margin', 0), B['rail'].y1)
     if rail:
         # the right column moves as ONE unit (notes, tables and ordering diagrams keep their relative layout)
         rb = fitz.Rect()
         for b_ in rail: rb |= b_['r']
-        rw = RAIL.x1 - 524          # the rail may widen leftwards up to x=524 (same limit as the Zhiyuan rule)
+        rw = RAIL.x1 - B['rail_min_x']          # the rail may widen leftwards up to x=524 (same limit as the Zhiyuan rule)
         sc = min(rw / rb.width, RAIL.height / rb.height)
         uni = min((FRAME.width - 20) / cb.width, (FRAME.height - 20) / cb.height)
         if tpl.get('rail_cap'): sc = min(sc, tpl['rail_cap'] * uni)   # notes never blow up far beyond the drawing's scale
@@ -532,13 +535,13 @@ def run(job, out, font, font_index=0):
                 for i in b_['idx']: mats[i] = (mm, sc)
                 y += b_['r'].height * sc + gap
             x = xl
-        rail_x0 = x - 10 if rail else FRAME.x1 - 8
+        rail_x0 = x - 10 if rail else B['views_area'].x1
     else:
-        rail_x0 = FRAME.x1 - 8
+        rail_x0 = B['views_area'].x1
     # views keep their arrangement, enlarged uniformly into the left area, clear of the title block
     vb = fitz.Rect()
     for b_ in views: vb |= b_['r']
-    area = fitz.Rect(FRAME.x0 + 10, FRAME.y0 + 10, rail_x0, (RESERVED.y0 - 6) if slot else FRAME.y1 - 8)
+    area = fitz.Rect(B['views_area'].x0, B['views_area'].y0, rail_x0, B['views_area_bottom_with_slot'] if slot else B['views_area'].y1)
     s = min(area.width / vb.width, area.height / vb.height)
     placed = None
     s_floor = min(0.2, 0.2 * s)   # sources drawn at 1:1 in metres/large units start far below 1
@@ -597,14 +600,14 @@ def run(job, out, font, font_index=0):
     if slot:
         sb = fitz.Rect()
         for b_ in slot: sb |= b_['r']
-        SLOT = fitz.Rect(FRAME.x0 + 10, RESERVED.y0 + 2, RESERVED.x0 - 10, FRAME.y1 - 6)
+        SLOT = fitz.Rect(B['slot'])
         ss = min(SLOT.width / sb.width, SLOT.height / sb.height, s)
         ms = fitz.Matrix(ss, 0, 0, ss, SLOT.x0 + (SLOT.width - sb.width * ss) / 2 - sb.x0 * ss,
                          SLOT.y0 + (SLOT.height - sb.height * ss) / 2 - sb.y0 * ss)
         for b_ in slot:
             for i in b_['idx']: mats[i] = (ms, ss)
     doc = fitz.open(); pg = doc.new_page(width=KF.PAGE[0], height=KF.PAGE[1])
-    pg.insert_image(pg.rect, filename=str(ROOT / 'assets' / 'background.png'))
+    if B.get('background'): pg.insert_image(pg.rect, filename=str(ROOT / B['background']))
     sh = pg.new_shape()
     for n_, d in enumerate(keep):
         if n_ not in mats: continue
@@ -629,7 +632,7 @@ def run(job, out, font, font_index=0):
     ff = Path(font)
     if font_index or ff.suffix.lower() in ('.ttc', '.otc', '.otf'):
         sys.path.insert(0, str(HERE)); import auto_manifest as am
-        text = job['title'] + job['model']
+        text = job['title'] + job['model'] + B.get('font_extra_text', '')
         ttf = Path(out) / 'title-font.ttf'; Path(out).mkdir(parents=True, exist_ok=True)
         from fontTools.ttLib import TTFont
         from fontTools import subset
@@ -640,23 +643,27 @@ def run(job, out, font, font_index=0):
         font = str(ttf)
     fields = {'title': job['title'], 'model': job['model'], 'unit': 'mm', 'size': job.get('size', 'A4'),
               'sheet': '1/1', 'scale_text': ''}
-    KF.draw_frame_and_title(pg, fields, {'font': font, 'brand_strip': str(ROOT / 'assets' / 'brand-strip.png')},
-                            tolerance_mode='source')
-    DT.render_dynamic_tolerance(pg, job['tolerance'], KF.TOLERANCE_BOX)
+    if brand == 'runqing':
+        KF.draw_runqing_frame_and_title(pg, fields, {'font': font, 'logo': str(ROOT / B['logo'])}, B, job['tolerance'])
+    else:
+        KF.draw_frame_and_title(pg, fields, {'font': font, 'brand_strip': str(ROOT / 'assets' / 'brand-strip.png')},
+                                tolerance_mode='source')
+        DT.render_dynamic_tolerance(pg, job['tolerance'], KF.TOLERANCE_BOX)
     out = Path(out); out.mkdir(parents=True, exist_ok=True)
-    pdf = out / f"{job['model'].replace('/', '_')}-康生图纸.pdf"
+    pdf = out / f"{job['model'].replace('/', '_')}-{B['output_suffix']}.pdf"
     doc.save(pdf, garbage=3, deflate=True)
     rep = {'source': job['source'], 'inner_frame': list(I), 'supplier_furniture_rects': [list(r) for r in furn],
            'paths_total': len(D), 'paths_placed': len(keep), 'dropped': dict(dropped),
            'dominant_colour_to_blue': dominant, 'other_colours_to_gold': [k for k in cnt if k != dominant],
            'scale': round(s, 4), 'output': str(pdf), 'auto_match': auto,
+           **({'brand': brand} if brand != 'kangsheng' else {}),
            'warnings': (['SMALL_SCALE: 缩放 < 0.55，视图会偏小，请看对照图'] if s < 0.55 else [])}
     (out / 'report.json').write_text(json.dumps(rep, ensure_ascii=False, indent=1))
     # side-by-side review image
     rv = fitz.open(); r = rv.new_page(width=1700, height=640)
     r.show_pdf_page(fitz.Rect(5, 20, 845, 635), src, 0, clip=bb)
     r.show_pdf_page(fitz.Rect(855, 20, 1695, 635), doc, 0)
-    r.get_pixmap(dpi=110).save(out / f"{job['model'].replace('/', '_')}-原图对照.png")
+    r.get_pixmap(dpi=110).save(out / f"{job['model'].replace('/', '_')}-{B['compare_suffix']}.png")
     print(json.dumps({k: rep[k] for k in ('paths_total', 'paths_placed', 'dropped', 'scale', 'warnings')}, ensure_ascii=False))
     return rep
 
@@ -664,8 +671,9 @@ def run(job, out, font, font_index=0):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('job'); ap.add_argument('--out', required=True)
     ap.add_argument('--font', required=True); ap.add_argument('--font-index', type=int, default=0)
+    ap.add_argument('--brand', choices=BR.BRANDS, default='kangsheng', help='目标品牌；不传 = 康生（行为与以前完全一致）')
     a = ap.parse_args()
-    run(json.loads(Path(a.job).read_text()), a.out, a.font, a.font_index)
+    run(json.loads(Path(a.job).read_text()), a.out, a.font, a.font_index, a.brand)
 
 
 if __name__ == '__main__':

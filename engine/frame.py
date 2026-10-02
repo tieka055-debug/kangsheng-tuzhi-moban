@@ -122,3 +122,120 @@ def draw_frame_and_title(page: fitz.Page, fields: dict, assets: dict,
         y = 523
         for value in fields.get("tolerances", []):
             text(408, y, value, 7); y += 10
+
+
+def draw_runqing_frame_and_title(page: fitz.Page, fields: dict, assets: dict, brand: dict, tolerance: dict) -> None:
+    """润擎（RunQing）图框：橘色外框 + 青蓝内框、格号 1–7/A–E、左上标题、右上修订栏、右下 logo+标题栏+GENERAL TOLERANCE。
+    只画图框和标题栏；产品技术内容（规格/材料/零件表）一律是原图矢量搬运，这里不写任何型号的技术值。
+    坐标全部来自 brands/runqing.json（样张实测）。公差只写 tolerance 里传入的（本图自己读出的）值。"""
+    import dynamic_tolerance as DT
+    blue, orange = brand['blue'], brand['gold']
+    grid_c = tuple(v / 255 for v in brand['grid_color_rgb255'])
+    font_file = str(Path(assets['font']).expanduser())
+    page.insert_font(fontname='rq-font', fontfile=font_file)
+    cjk = fitz.Font(fontfile=font_file)
+    helv, hebo = fitz.Font('helv'), fitz.Font('hebo')
+
+    def line(a, b, width=.5, color=blue):
+        page.draw_line(fitz.Point(*a), fitz.Point(*b), color=color, width=width)
+
+    def put(x, y0, value, size, bold=False, maxw=None, k=1.09):
+        """y0 = 文字框顶（样张 bbox 的 y0）；基线 = y0 + k*字号（k 由样张字形实测）"""
+        ascii_ = value.isascii()
+        font_obj = (hebo if bold else helv) if ascii_ else cjk
+        w = font_obj.text_length(value, fontsize=size)
+        if maxw and w > maxw:
+            size *= maxw / w
+        name = ('hebo' if bold else 'helv') if ascii_ else 'rq-font'
+        page.insert_text((x, y0 + k * size), value, fontname=name, fontsize=size, color=blue)
+
+    # ---- 外框 / 内框 / 格号
+    page.draw_rect(fitz.Rect(brand['outer_frame']), color=orange, width=1.1)
+    fr = brand['frame']
+    page.draw_rect(fitz.Rect(fr), color=blue, width=.7)
+    for x in brand['grid_x']:
+        line((x, fr.y0), (x, fr.y0 + 5), .4, grid_c); line((x, fr.y1 - 5), (x, fr.y1), .4, grid_c)
+    for y in brand['grid_y']:
+        line((fr.x0, y), (fr.x0 + 5, y), .4, grid_c); line((fr.x1 - 5, y), (fr.x1, y), .4, grid_c)
+    for i, x in enumerate(brand['grid_label_x'], 1):
+        put(x, 15.2, str(i), 6.3); put(x, 571.5, str(i), 6.3)
+    for i, y in enumerate(brand['grid_label_y']):
+        put(18.0, y, chr(65 + i), 6.2); put(818.9, y, chr(65 + i), 6.2)
+
+    # ---- 左上标题 + 型号
+    put(38, 41.6, 'CONNECTOR ENGINEERING DRAWING', 9.0, bold=True)
+    line((38, 56.28), (526, 56.28), 1.05, orange)
+    put(39, 61.3, fields['model'], 7.4, maxw=480)
+
+    # ---- 右上修订栏（只画空表头，原图的修订内容不搬）
+    rb = fitz.Rect(brand['rev_box'])
+    page.draw_rect(rb, color=blue, width=.65)
+    for x in brand['rev_vlines']: line((x, rb.y0), (x, rb.y1), .45)
+    line((rb.x0, brand['rev_hline']), (rb.x1, brand['rev_hline']), .45)
+    for x, t in zip([552.0, 581.0, 700.0, 760.0], ['REV', 'DESCRIPTION', 'DRAW', 'DATE']):
+        put(x, 46.6, t, 6.2, bold=True)
+
+    # ---- 右下标题栏
+    tb = fitz.Rect(brand['title_box'])
+    page.draw_rect(tb, color=blue, width=.65)
+    for y, w in zip(brand['title_hlines'], (.6, .5, .5)): line((tb.x0, y), (tb.x1, y), w)
+    vx, vy0, vy1 = brand['title_vline']; line((vx, vy0), (vx, vy1), .45)
+    page.insert_image(fitz.Rect(brand['logo_box']), filename=assets['logo'], keep_proportion=True)
+    page.insert_text((640, 431.7 + .8 * 11.1), '东莞市润擎电子科技有限公司', fontname='rq-font', fontsize=11.1, color=blue)
+    put(641, 446, 'Dongguan Runqing Electronics Technology Co., Ltd.', 5.8)
+    put(552, 470.7, 'PART NAME', 6.1, bold=True)
+    put(552, 478.8, fields['title'], 7.9, bold=True, maxw=106)
+    put(667, 470.7, 'SOURCE REF. P/N', 6.1, bold=True)
+    put(667, 479.9, fields['model'], 6.9, maxw=142)
+    put(552, 495.6, 'UNIT  ' + fields.get('unit', 'mm'), 6.2)
+    put(650, 495.6, 'SCALE  ' + fields.get('scale_text', ''), 6.2)
+    put(732, 495.6, 'REV  ' + fields.get('revision', ''), 6.2, bold=True)
+    put(552, 504.6, 'SOURCE DATE  ' + fields.get('source_date', ''), 6.2)
+    put(732, 504.6, 'PAGE  ' + fields.get('sheet', '1/1').replace('/', ' OF '), 6.2)
+    # GENERAL TOLERANCE / 默认公差
+    page.insert_text((552, 519.2 + .81 * 6.5), 'GENERAL TOLERANCE / ', fontname='helv', fontsize=6.5, color=blue)
+    page.insert_text((552 + helv.text_length('GENERAL TOLERANCE / ', fontsize=6.5), 519.2 + .81 * 6.5), '默认公差',
+                     fontname='rq-font', fontsize=6.5, color=blue)
+    schema = DT.normalize_tolerance_schema(tolerance)
+    if any(not helv.has_glyph(ord(c)) for key in DT.SCHEMA_KEYS for row in schema[key] for c in DT._line(row)):
+        raise ValueError('Tolerance contains a glyph unsupported by the chosen font')
+    ta = fitz.Rect(brand['tolerance_area']); xs = brand['tolerance_cols_x']
+    first_base, last_base = 538.5, ta.y1 - 2
+    flat = [("t", DT._line(r)) for k in ('linear_tolerances', 'angular_tolerances') for r in schema[k]]
+    cond = [("c", DT._line(r)) for r in schema['additional_tolerance_conditions']]
+    # 样张排法：档位按行从左到右排成两列（≤5 / >5-30 ；>30 / ANGLE），放不下再退回按类别分列
+    arrangements = ([('rowmajor', flat[0::2], flat[1::2], cond)] if len(flat) > 1 else []) + list(DT._body_arrangements(schema))
+    for mode, left, right, conditions in arrangements:
+        cols = [xs[0]] + ([xs[1]] if right else [])
+        col_w = [(xs[1] - xs[0] - 4) if right else ta.x1 - xs[0] - 4, ta.x1 - xs[1] - 4]
+        rows = max(len(left), len(right)) + len(conditions)
+        for size in (6.5, 6.0, 5.5, 5.0, DT.MIN_FONT_PT):
+            step = 13.0 if rows < 3 else min(13.0, (last_base - first_base) / (rows - 1))
+            if step < size * 1.25 or first_base + (rows - 1) * step > last_base + .01: continue
+            if any(helv.text_length(t, fontsize=size) > col_w[c] for c, rs in enumerate((left, right)) for _, t in rs): continue
+            if any(helv.text_length(t, fontsize=size) > ta.x1 - xs[0] - 4 for _, t in conditions): continue
+            n = 0
+            for c, rs in enumerate((left, right)):
+                for r, (_, t) in enumerate(rs):
+                    page.insert_text((cols[c], first_base + r * step), t, fontname='helv', fontsize=size, color=blue); n += 1
+            base = max(len(left), len(right))
+            for r, (_, t) in enumerate(conditions):
+                page.insert_text((xs[0], first_base + (base + r) * step), t, fontname='helv', fontsize=size, color=blue); n += 1
+            assert n == sum(len(schema[k]) for k in DT.SCHEMA_KEYS)
+            break
+        else:
+            continue
+        break
+    else:
+        raise ValueError('Complete tolerance data overflows its fixed footer cell')
+
+    # ---- 左下版权 + 投影符号
+    put(39, 550.1, 'COPYRIGHT RESERVED, PLEASE DO NOT COPY.', 5.5)
+    cx, cy = 499.2, 542.7
+    page.draw_circle(fitz.Point(cx, cy), 4.9, color=blue, width=.45)
+    page.draw_circle(fitz.Point(cx, cy), 2.3, color=blue, width=.45)
+    line((cx - 6.9, cy), (cx - 5.2, cy), .4); line((cx, cy - 6.5), (cx, cy + 6.5), .4)
+    line((cx + 5.2, cy), (cx + 8.5, cy), .4); line((cx - .6, cy), (cx + .6, cy), .4)
+    trap = [fitz.Point(507.7, 541.1), fitz.Point(516.7, 537.7), fitz.Point(516.7, 547.2), fitz.Point(507.7, 544.3)]
+    page.draw_polyline(trap + [trap[0]], color=blue, width=.45)
+    line((507.7, cy), (519, cy), .4)

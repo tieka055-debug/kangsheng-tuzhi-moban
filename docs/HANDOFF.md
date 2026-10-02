@@ -83,3 +83,11 @@ D_dingduan：0532 0569 0570 0587　A_rohs_top_left：0107 0115　N_nd_cad2pdf：
 OK 的 178 张按模板分 22 组，每组抽 2–3 张（分数最低的优先）出测试图看对照图，43 张全部干净：B_yellow_grid_wjh 82, A_letter_frame_parts_table 35, SU_sunup 20, N_nd_letter 7, TF_tufu 4, CEN_cenlink 4, WD_weiding 4, LP_lianpan 4, RQ_runqing 3, A_rohs_top_left 2, LT_lituo 2, LH_dc_vertical 2, N_nd_cad2pdf 2, N_nd_dwg_sheet 1, DD2_dingduan_a4p 1, LH_dc_upright 1, DC3_jack_en 1, LF_lvfeng_inner 1, LF_lvfeng 1, DT_dingte 1。
 **结论：这批表里判成 OK 的，对应模板可信，GPT 可以放心用。** 仅有三处小提示：198/306（B_yellow_grid）视图偏小；141（N_nd_dwg_sheet）左下留一条粗线；N_nd_dwg_sheet / LP_lianpan / MU_black 三个模板的 OK 要多看一眼对照图。
 不能用的：UNKNOWN/AMBIGUOUS/NO_FRAME 共 255 张，聚成 92 类，前几类是联攀(LiaoFeng)图框变体、A 型 Y.C.Zhang 框变体、美金兴(MJ 带水印)等杂牌，各只有几张；GPT 遇到请记进待处理清单，不要硬做。
+
+## 2026-10-02 润擎（RunQing）第二品牌
+- 新增 `--brand runqing`（`cad_family.py`，默认康生，不传行为不变）；品牌配置 `brands/{kangsheng,runqing}.json` + `engine/brand.py`；润擎画框 `engine/frame.py: draw_runqing_frame_and_title()`；logo 自样张导出为 `assets/runqing-logo.png`。判图框三件套（`frame_match.py`、`cad_templates.json`、`cad_signatures.json`）未动。详见 SKILL.md「目标品牌」。
+- 做法 A：只换图框，原图矢量原样搬进右栏。样张 D27M-12Pin-R2（飞书「全图纸」表，原图判 AMBIGUOUS，用 `A_rohs_top_left` 出图，康生版也干净）逐项对上：格号、橘/青蓝双框、左上标题、右上修订栏、右下 logo+标题栏+公差表。差异（有意）：右上 SPECIFICATIONS/RoHS 徽标/电压电流行不生成；修订栏、SOURCE DATE、SCALE、REV 留空（康生同样留空）。
+- 公差：样张用 ≤5 ±0.2 / >5-30 ±0.3 / >30 ±0.5 / ANGLE 0°±3°，与原图 UP TO 5 / ABOVE 5~30 / ABOVE 30 / ANGLE 一致；润擎版按原图读数，两品牌共用 job 时康生栏窄需短写（0~5、5~30、>30）。
+- 回归：康生 26 个任务 0 差异，单测 33 通过。另出 10 张不同图框的润擎预览（本机 `work/runqing_preview/`，不进仓库；9 张预览的公差是占位 PREVIEW/NOT READ，不是真值）。
+- 待用户确认版式后：批量用 `docs/RUNQING_BRAND_TASK.md` 里的 GPT 指令；回填目标字段是飞书表里已有的「润擎图纸」附件字段（字段 ID 运行时传参）。
+- 已知：SU_sunup 第 08 号样本（2006M-5PIN-S1）单独出图 FRAME_NOT_FOUND（框检测与品牌无关，康生同样如此，未处理）。

@@ -151,6 +151,21 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
    缺图/原图损坏的记录：`python tools/feishu_note.py --base … --table … --notes notes.json`（在「备注」后面追加说明，不改原内容）。
    base/table/字段 ID 属于业务数据，运行时传参，不写进仓库。
 
+### 目标品牌（`--brand`，2026-10-02 起）
+
+同一套流水线可以输出两个品牌的图框，**源图判图框（`frame_match.py`、`cad_templates.json`、`cad_signatures.json`）两个品牌共用，不分品牌**：
+
+| 品牌 | 命令 | 输出 |
+|---|---|---|
+| 康生（默认，不传 `--brand`） | `python pipeline/cad_family.py job.json --out … --font …` | `<型号>-康生图纸.pdf`、`<型号>-原图对照.png` |
+| 润擎 RunQing | `… --brand runqing`（必须显式写） | `<型号>-润擎图纸.pdf`、`<型号>-原图润擎对照.png` |
+
+- 品牌配置在 `brands/<品牌>.json`（frame、标题栏/公差栏、右栏 `rail`、保留区 `reserved`、主色/辅色、logo、输出后缀），由 `engine/brand.py` 读取。**`brands/kangsheng.json` 的值必须与原先写死的完全一致**（`tests/test_brands.py` 守着）；改 `cad_family.py` 后仍跑 `tools/regress.py`，26 个任务 0 差异。
+- 润擎图框由 `engine/frame.py` 的 `draw_runqing_frame_and_title()` 画：橘色外框(#D7974C)+青蓝内框(#214E68)、格号 1–7/A–E、左上 CONNECTOR ENGINEERING DRAWING+型号、右上空的 REV/DESCRIPTION/DRAW/DATE 修订栏、右下 logo(`assets/runqing-logo.png`)+公司名+PART NAME/SOURCE REF. P/N/UNIT·SCALE·REV·SOURCE DATE·PAGE+GENERAL TOLERANCE、左下 COPYRIGHT、投影符号。
+- **做法 A（只换图框）**：规格/材料/零件表按原图矢量原样搬进右栏，不重打、不跨型号补值；样张里的 SPECIFICATIONS/BOM 英文重排、`12 V / 12 A`、SOURCE DATE、SCALE、REV 值不生成（飞书表字段重生成那条路 B 未开）。标题栏 PART NAME 用图纸自己的品名，SOURCE REF. P/N 和左上型号都用 job 的 `model`。
+- 公差：写 job 的 `tolerance`（只抄本图），润擎公差栏宽，档位名可以写原图原样；康生栏窄，同一份 job 两个品牌都出时用 `0~5` 这类短写。
+- 颜色映射同康生：黑/灰/主标注色→品牌主色，其他彩色→品牌辅色（润擎为橘色）。
+
 ### 图框模板（`families/cad_templates.json`）
 
 | 模板 | 图框 |
