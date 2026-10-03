@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """回归：把一批旧任务分别用「基线提交」和「当前代码」各跑一遍，比对输出的矢量内容，任何一张不同都要报出来。
-  python tools/regress.py 回归目录 [--base 5446aec] [--jobs 4]
+  python tools/regress.py 回归目录 [--base f36b05b] [--jobs 4]
 回归目录 = cases.json + cases/NN/{job.json,src.pdf} + font.otf（原图是业务数据，不进仓库，放在本机）。
 基线用 git worktree 临时检出，不动你的工作区。输出有差异 → 退出码 1。"""
 import argparse, hashlib, json, subprocess, sys, tempfile, shutil
@@ -9,7 +9,7 @@ from pathlib import Path
 import fitz
 
 ROOT = Path(__file__).resolve().parents[1]
-ap = argparse.ArgumentParser(); ap.add_argument('cases'); ap.add_argument('--base', default='5446aec'); ap.add_argument('--jobs', type=int, default=4)
+ap = argparse.ArgumentParser(); ap.add_argument('cases'); ap.add_argument('--base', default='f36b05b'); ap.add_argument('--jobs', type=int, default=4)
 a = ap.parse_args()
 C = Path(a.cases).resolve(); cases = json.load(open(C / 'cases.json')); font = C / 'font.otf'
 tmp = Path(tempfile.mkdtemp())
