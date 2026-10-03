@@ -698,6 +698,11 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         if not lj and d.get('lineJoin') == 1 and t in ('s', 'fs') and max(d['rect'].width, d['rect'].height) < 8 \
                 and all(it[0] == 'l' for it in d['items']):
             lj = lc = 1
+        # brand option (RunQing): every small straight-line stroke (a glyph once placed) gets round joins -- the source's
+        # miter limit is not carried over, so mitred glyph corners would otherwise spike out at the default limit
+        if not lj and B.get('round_small_glyphs') and t in ('s', 'fs') and max(d['rect'].width, d['rect'].height) * s < 6 \
+                and all(it[0] == 'l' for it in d['items']):
+            lj = lc = 1
         sh.finish(color=col, fill=fil, width=w, closePath=d.get('closePath', False),
                   even_odd=d.get('even_odd', False), lineCap=lc, lineJoin=lj)
     sh.commit()
