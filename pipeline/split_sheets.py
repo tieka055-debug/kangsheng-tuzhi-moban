@@ -53,7 +53,9 @@ def cut(page, clip, out):
             elif k == 'qu': sh.draw_quad(it[1] * m)
         t = d['type']
         sh.finish(color=d.get('color') if t in ('s', 'fs') else None, fill=d.get('fill') if t in ('f', 'fs') else None,
-                  width=d.get('width') or 0, closePath=d.get('closePath', False), even_odd=d.get('even_odd', False))
+                  # width 0 is a CAD hairline: PyMuPDF would write its default 1pt, so keep it hairline-thin
+                  width=d.get('width') or 0.01, closePath=d.get('closePath', False), even_odd=d.get('even_odd', False),
+                  lineCap=max(d.get('lineCap') or (0,)), lineJoin=d.get('lineJoin') or 0, dashes=d.get('dashes') or None)
     sh.commit(); doc.save(out)
 
 
