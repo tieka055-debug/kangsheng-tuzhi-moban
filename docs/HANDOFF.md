@@ -97,3 +97,11 @@ OK 的 178 张按模板分 22 组，每组抽 2–3 张（分数最低的优先�
 
 - 2026-10-03 检查 GPT 回填汇编（138 页）：版面全部合格；47 页公差栏 ± ° 显示成 `¡À` `¡ã`——供应商原图本身就是该乱码，GPT 照抄。已在 `cad_family.py` 加 `_fix_encoding` 自动还原。这 47 页已在飞书里，需重做并用新文件名（-v2）回填、由用户手动删除旧的（回填脚本只追加且同名跳过）。另有约 37 页角度公差重复一行（ANGLE ±3° 加 0° ±3°），无害。
 - 2026-10-03：用户要求润擎图上不出现供应商型号前缀。只去 `TF-`/`ND-`/`BG-`（用户选定；LH/LXF/WD/KS/PB/LF 等暂不去），程序自动处理，job 里照写原型号即可。
+
+- 2026-10-03 修 GPT 续跑首批 20 份暴露的模板问题：
+  - TF_tufu：改为 frame_bottom=title_top（页面左侧裁切程度不同也稳定，零件表不再被切）；新开关 caption_block / caption_gap / caption_h（PCB 图底部是一排小焊盘时，按整块判断把「RECOMMENDED P.C.B LAYOUT / TOP VIEW」说明并回 PCB）；补 6 个样本（TF-A20M-R1、TF-A20M-R1-SMD、TF-A21M-2/3/4Pin、ND-D30M-R1）。
+  - analyse 的「丢页面外对象」改为只丢超出页面 10% 以外的（途富类页面左框线本来就画在页面外几 pt，之前被误丢导致 FRAME_NOT_FOUND）。
+  - SU_sunup：底栏中间 DESCRIPTION（品名、角度、防呆孔位置）和 MATERIAL/COLOR 两格是技术内容，现在保留不删。之前做过的 SUN UP 图都少了这两格，需要重做。
+  - 1.5间距180度公座-5P/8P：是 W.J.H 阶梯标题栏框，用 B_yellow_grid_wjh 合格，已登记；与 A_letter 仍可能 AMBIGUOUS。
+  - TF_tufu 与 N_nd_letter 是同一套 Y.C.Zhang 框（途富/诺德），会 AMBIGUOUS，两个模板输出都干净。
+  - 仍未解决：SUN UP 无外边框版（2006MB-7PIN-X、2006MB-12PIN-X，只有底栏+修订栏）、3.5间距5P母座（页内小幅，需 clip）、BG-A02F-C-S2 的 Pin 表顺序。

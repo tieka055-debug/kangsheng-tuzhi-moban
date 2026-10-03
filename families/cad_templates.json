@@ -495,7 +495,7 @@
    "fit_search": true
   },
   "SU_sunup": {
-   "desc": "SUN UP(Sanap)图框：整页外框，右上 REV/ECN/DATE 修订栏，底部整条标题栏(签名/公差/SUN UP 商标)；材料/规格文字、PCB 图保留",
+   "desc": "SUN UP(Sanap)图框：整页外框，右上 REV/ECN/DATE 修订栏，底部整条标题栏(签名/公差/SUN UP 商标)；材料/规格文字、PCB 图保留；底栏中间 DESCRIPTION 与 MATERIAL/COLOR 两格是技术内容（品名、防呆孔位置、颜色），保留不删",
    "fit_search": true,
    "furniture_frac": [
     [
@@ -506,6 +506,24 @@
     ],
     [
      0,
+     0.865,
+     0.321,
+     1
+    ],
+    [
+     0.321,
+     0.934,
+     0.605,
+     1
+    ],
+    [
+     0.605,
+     0.921,
+     0.709,
+     1
+    ],
+    [
+     0.709,
      0.865,
      1,
      1
@@ -959,30 +977,28 @@
    ]
   },
   "TF_tufu": {
-   "desc": "途富电子(东莞)图框：字母 F…A/数字 1…4 外框（左边常被页面裁掉），左上 RoHS Compliant，右上 SYMBOL/REVISION/APPROVAL/DATE 修订栏，底部整条标题栏（公司名/COPYRIGHT/PART NAME/公差/签名）；标题栏上方零件表(HOUSING/CONTACT TERMINAL)保留",
+   "desc": "途富电子(东莞)图框：字母 F…A/数字 1…4 外框（左边常被页面裁掉），左上 RoHS Compliant，右上 SYMBOL/REVISION/APPROVAL/DATE 修订栏，底部整条标题栏（公司名/COPYRIGHT/PART NAME/公差/签名）；标题栏上方零件表(HOUSING/CONTACT TERMINAL)保留；标题栏顶线为图幅底(frame_bottom=title_top，页面左侧裁切程度不同也稳定)；PCB 说明离图稍远，caption_gap 0.06",
    "fit_search": true,
    "furniture_frac": [
     [
      0,
      0,
      0.075,
-     0.065
+     0.072
     ],
     [
      0.64,
      0,
      1,
-     0.074
-    ],
-    [
-     0,
-     0.893,
-     1,
-     1
+     0.082
     ]
    ],
    "bottom_slot": true,
-   "table_band_top": 0.78
+   "table_band_top": 0.78,
+   "frame_bottom": "title_top",
+   "caption_gap": 0.06,
+   "caption_h": 0.08,
+   "caption_block": true
   },
   "DD2_dingduan_a4p": {
    "desc": "鼎端(Dingduan)A4 竖页版图框（横框画在竖页中部，框外上方有大号「端子: 型号」文字；需 frame_search 0.3）：右上 REV/DESCRIPTION/DRAW/DATE 修订栏，右下公司 logo+标题栏，左侧 UNLESS OTHERWISE SPECIFIED TOLERANCE；No.of pins/Dimension 表、Material/Specification、P.C.B Layout 保留",

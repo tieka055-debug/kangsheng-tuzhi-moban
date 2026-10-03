@@ -71,7 +71,8 @@ def long_lines(D, orient, min_len, lo=None, hi=None):
 def analyse(page, furniture_frac=None, frame_bottom=None, clip=None, search=0.12):
     D = page.get_drawings()
     R_ = page.rect
-    D = [d for d in D if R_.x0 - 2 <= (d['rect'].x0 + d['rect'].x1) / 2 <= R_.x1 + 2 and R_.y0 - 2 <= (d['rect'].y0 + d['rect'].y1) / 2 <= R_.y1 + 2] or D   # stray objects far outside the page (editor stamps) must not stretch the frame search
+    mx, my = 0.1 * R_.width, 0.1 * R_.height   # frames are often drawn slightly past the page edge: only drop objects far outside
+    D = [d for d in D if R_.x0 - mx <= (d['rect'].x0 + d['rect'].x1) / 2 <= R_.x1 + mx and R_.y0 - my <= (d['rect'].y0 + d['rect'].y1) / 2 <= R_.y1 + my] or D   # stray objects far outside the page (editor stamps) must not stretch the frame search
     if clip:   # several sheets on one page: work on one of them
         C = fitz.Rect(clip); D = [d for d in D if C.contains(d['rect'])]
     bb = fitz.Rect()
@@ -380,9 +381,12 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     if len(blocks) > 1:
         for b_ in sorted(blocks, key=lambda q: q['r'].height):
             r = b_['r']
-            if r.height > 0.06 * cb.height or b_ not in blocks: continue
+            if r.height > tpl.get('caption_h', 0.06) * cb.height or b_ not in blocks: continue
             def close_above(q):   # some path of q sits just above the caption and overlaps it horizontally
-                return any(0 <= r.y0 - rects[i].y1 < 0.03 * cb.height and min(r.x1, rects[i].x1) - max(r.x0, rects[i].x0) > 0.3 * r.width
+                if tpl.get('caption_block') and 0 <= r.y0 - q['r'].y1 < tpl.get('caption_gap', 0.03) * cb.height \
+                        and min(r.x1, q['r'].x1) - max(r.x0, q['r'].x0) > 0.3 * r.width:
+                    return True   # judged on the whole block: a PCB pattern ends in many tiny pads, none wide enough by itself
+                return any(0 <= r.y0 - rects[i].y1 < tpl.get('caption_gap', 0.03) * cb.height and min(r.x1, rects[i].x1) - max(r.x0, rects[i].x0) > 0.3 * r.width
                            for i in q['idx'])
             above = [q for q in blocks if q is not b_ and close_above(q)]
             if above:
