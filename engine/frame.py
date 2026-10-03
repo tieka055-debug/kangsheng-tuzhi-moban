@@ -203,6 +203,8 @@ def draw_runqing_frame_and_title(page: fitz.Page, fields: dict, assets: dict, br
     first_base, last_base = 538.5, ta.y1 - 2
     flat = [("t", DT._line(r)) for k in ('linear_tolerances', 'angular_tolerances') for r in schema[k]]
     cond = [("c", DT._line(r)) for r in schema['additional_tolerance_conditions']]
+    if not flat and len(cond) > 1:   # a source whose tolerance rows are copied verbatim as text (e.g. tiers printed without a value): lay them out like tiers
+        flat, cond = cond, []
     # 样张排法：档位按行从左到右排成两列（≤5 / >5-30 ；>30 / ANGLE）；放不下再按类别分列；档位很多（如 4 线性 + 5 角度）时排三列
     xs3 = brand.get('tolerance_cols3_x', [])
     arrangements = ([([flat[0::2], flat[1::2]], xs, cond)] if len(flat) > 1 else [])
