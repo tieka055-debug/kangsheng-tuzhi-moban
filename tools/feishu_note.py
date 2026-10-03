@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 """在飞书多维表格的文本字段（默认「备注」）里追加一句说明，用来标记缺图、原图损坏等情况。
 
-  python tools/feishu_note.py --base <base_token> --table <table_id> --notes notes.json [--field 备注]
+  python tools/feishu_note.py --base <base_token> --table <table_id> --notes notes.json [--field 备注] [--tag 【润擎图纸】]
 
 notes.json：[{"record_id": "...", "note": "缺原图：……"}, ...]
-- 原有备注一个字都不改，新说明接在后面（另起一行），并带「【康生图纸】」前缀。
-- 已经有「【康生图纸】」说明的记录跳过，可重复运行。
+- 原有备注一个字都不改，新说明接在后面（另起一行），并带前缀（默认「【康生图纸】」；润擎用 --tag 【润擎图纸】）。
+- 已经有同一前缀说明的记录跳过，可重复运行（康生和润擎的说明互不影响）。
 - 先对第一条做 --dry-run 确认命令格式，再逐条写入；写完重新导出，核对备注和其他字段。"""
 import argparse, json, subprocess, sys
 from pathlib import Path
 
-TAG = '【康生图纸】'
+TAG = '【康生图纸】'   # 默认前缀；润擎传 --tag 【润擎图纸】
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--base', required=True); ap.add_argument('--table', required=True)
     ap.add_argument('--notes', required=True); ap.add_argument('--field', default='备注')
+    ap.add_argument('--tag', default=TAG, help='说明前缀，默认【康生图纸】，润擎用【润擎图纸】')
     a = ap.parse_args()
     B, T = a.base, a.table
     workdir = Path(a.notes).resolve().parent
@@ -43,8 +44,8 @@ def main():
         if r is None: print('记录不存在，跳过', it['record_id']); continue
         old = r.get(a.field) or ''
         if not isinstance(old, str): print('备注不是文本字段，跳过', it['record_id']); continue
-        if TAG in old: print('已有说明，跳过', it['record_id']); continue
-        todo.append((it['record_id'], old, (old + '\n' if old.strip() else '') + TAG + it['note']))
+        if a.tag in old: print('已有说明，跳过', it['record_id']); continue
+        todo.append((it['record_id'], old, (old + '\n' if old.strip() else '') + a.tag + it['note']))
 
     def cmd(rid, text, dry):
         c = ['+record-upsert', '--base-token', B, '--table-id', T, '--record-id', rid,
@@ -62,7 +63,7 @@ def main():
     after = export('notes-after.ndjson'); bad = []
     for rid, old, new in todo:
         x, y = before[rid], after.get(rid) or {}
-        same_rest = all(x.get(k) == y.get(k) for k in ('2D图纸', '替换图纸', '内部型号', '中文产品名称'))
+        same_rest = all(x.get(k) == y.get(k) for k in set(x) | set(y) if k != a.field)   # every other field unchanged
         if (y.get(a.field) or '') != new or not same_rest: bad.append(rid)
     print(f'写入 {len(todo)} 条，核对不一致 {len(bad)} 条', bad)
 

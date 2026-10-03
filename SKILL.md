@@ -148,7 +148,7 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 6. **看图。** 打开 `*-原图对照.png`，逐项核对：视图、尺寸、说明/材料、型号表、PCB 布局都在；没有残留供应商标题栏/修订栏/RoHS；没有多余的长线；标注是蓝色、端子/焊盘等重点是金色。
    有问题先查原因（模板比例、`frame_bottom`、`dominant_colour`），不要为单张图改代码。
 7. **回填飞书：** `python tools/feishu_backfill.py --base … --table … --field … --plan plan.json`（只追加，按 2D 图名核对，回读校验）。
-   缺图/原图损坏的记录：`python tools/feishu_note.py --base … --table … --notes notes.json`（在「备注」后面追加说明，不改原内容）。
+   缺图/原图损坏的记录：`python tools/feishu_note.py --base … --table … --notes notes.json [--tag 【润擎图纸】]`（在「备注」后面追加说明，不改原内容；润擎必须加 `--tag 【润擎图纸】`）。
    base/table/字段 ID 属于业务数据，运行时传参，不写进仓库。
 
 ### 目标品牌（`--brand`，2026-10-02 起）

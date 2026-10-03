@@ -249,6 +249,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     # a table standing on the supplier title block shares its bottom rule with the block: when three or more
     # kept vertical rules end on a removed area's top edge, redraw the bottom rule between them
     # (the inner frame's bottom edge counts too: a parts table may stand on the frame itself)
+    u_ = max(1.0, max(I.width, I.height) / 1190)   # row-spacing windows grow with sheets drawn in large units (A3 and smaller: 1)
     for q in list(furn) + [fitz.Rect(I.x0, I.y1, I.x1, I.y1 + 1)]:
         ends = []
         for d in keep:
@@ -263,7 +264,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             row = sorted((e for e in ends if abs(e[1] - yb) < 0.6), key=lambda e: e[0])
             cur = row[:1]
             for a_, b_ in zip(row, row[1:]):   # neighbouring columns must be tied together by a row rule of the table
-                if any(h[0] <= a_[0] + 0.6 and h[1] >= b_[0] - 0.6 and yb - 60 < h[2] < yb - 1 for h in hrules): cur.append(b_)
+                if any(h[0] <= a_[0] + 0.6 and h[1] >= b_[0] - 0.6 and yb - 60 * u_ < h[2] < yb - 1 for h in hrules): cur.append(b_)
                 else: groups.append(cur); cur = [b_]
             if cur: groups.append(cur)
         for grp in groups:
@@ -271,7 +272,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             x0 = min(e[0] for e in grp); x1 = max(e[0] for e in grp); src_ = grp[0][2]; yb_ = grp[0][1]
             # the table's row rules may run past the outer columns (their border was the supplier frame): follow them
             rows = [(min(it[1].x, it[2].x), max(it[1].x, it[2].x), it[1].y) for d in keep for it in d['items']
-                    if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3 and yb_ - 60 < it[1].y < yb_ - 1
+                    if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3 and yb_ - 60 * u_ < it[1].y < yb_ - 1
                     and min(it[1].x, it[2].x) <= x0 + 0.6 and max(it[1].x, it[2].x) >= x1 - 0.6]   # full-width row rules only
             new_items = []
             for side in (0, 1):
@@ -298,7 +299,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         for grp in by_start.values():
             grp.sort(key=lambda r_: r_[2]); cl = [grp[:1]]
             for a_, b_ in zip(grp, grp[1:]):
-                if b_[2] - a_[2] < 40: cl[-1].append(b_)
+                if b_[2] - a_[2] < 40 * u_: cl[-1].append(b_)
                 else: cl.append([b_])
             for c_ in cl:
                 if len(c_) < 3: continue
