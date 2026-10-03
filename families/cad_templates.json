@@ -1011,7 +1011,8 @@
    "frame_bottom": "title_top",
    "caption_gap": 0.06,
    "caption_h": 0.08,
-   "caption_block": true
+   "caption_block": true,
+   "round_joins": true
   },
   "DD2_dingduan_a4p": {
    "desc": "鼎端(Dingduan)A4 竖页版图框（横框画在竖页中部，框外上方有大号「端子: 型号」文字；需 frame_search 0.3）：右上 REV/DESCRIPTION/DRAW/DATE 修订栏，右下公司 logo+标题栏，左侧 UNLESS OTHERWISE SPECIFIED TOLERANCE；No.of pins/Dimension 表、Material/Specification、P.C.B Layout 保留",
