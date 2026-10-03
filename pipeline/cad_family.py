@@ -416,6 +416,8 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             above = [q for q in blocks if q is not b_ and close_above(q)]
             if above:
                 q = above[0]
+                if tpl.get('caption_block'):   # several drawings above: the caption belongs to the one it sits under most
+                    q = max(above, key=lambda q: min(r.x1, q['r'].x1) - max(r.x0, q['r'].x0))
                 q['idx'] += b_['idx']; q['r'] |= r; blocks.remove(b_)
     if os.environ.get('CAD_DEBUG'):
         for b_ in blocks:
