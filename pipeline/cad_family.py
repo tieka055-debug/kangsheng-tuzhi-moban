@@ -287,6 +287,31 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             keep.append({'items': new_items, 'type': 's', 'color': src_.get('color'), 'width': src_.get('width'),
                          'closePath': False, 'rect': fitz.Rect(x0, min(min(i_[1].y, i_[2].y) for i_ in new_items) - 0.01, x1, yb_ + 0.01)})
             dropped['table_base_restored'] += 1
+    # a table drawn against the supplier frame's left/right edge uses the frame line as its outer border (which is
+    # removed with the frame): when three or more row rules sharing one start end on that edge, redraw the border
+    for xe, side in ((I.x1, 1), (I.x0, 0)):
+        rows = [(min(it[1].x, it[2].x), max(it[1].x, it[2].x), it[1].y, d) for d in keep for it in d['items']
+                if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3 and abs(it[1].x - it[2].x) > 2]
+        rows = [r_ for r_ in rows if abs(r_[side] - xe) < 1.0]
+        by_start = collections.defaultdict(list)
+        for r_ in rows: by_start[round(r_[1 - side] / 0.6)].append(r_)
+        for grp in by_start.values():
+            grp.sort(key=lambda r_: r_[2]); cl = [grp[:1]]
+            for a_, b_ in zip(grp, grp[1:]):
+                if b_[2] - a_[2] < 40: cl[-1].append(b_)
+                else: cl.append([b_])
+            for c_ in cl:
+                if len(c_) < 3: continue
+                y0_, y1_ = c_[0][2], c_[-1][2]; x_ = sum(r_[side] for r_ in c_) / len(c_)
+                vs = [(it[1].x, it[1].y, it[2].y) for d in keep for it in d['items'] if it[0] == 'l' and abs(it[1].x - it[2].x) < 0.3]
+                vs += [(xx, q.y0, q.y1) for d in keep for it in d['items'] if it[0] in ('re', 'qu')
+                       for q in [it[1] if it[0] == 're' else it[1].rect] for xx in (q.x0, q.x1)]   # rectangle edges are borders too
+                cov = sum(max(0, min(y1_, max(a, b)) - max(y0_, min(a, b))) for x, a, b in vs if abs(x - x_) < 0.6)
+                if cov >= 0.95 * (y1_ - y0_): continue
+                src_ = c_[0][3]
+                keep.append({'items': [('l', fitz.Point(x_, y0_), fitz.Point(x_, y1_))], 'type': 's', 'color': src_.get('color'),
+                             'width': src_.get('width'), 'closePath': False, 'rect': fitz.Rect(x_ - 0.01, y0_, x_ + 0.01, y1_)})
+                dropped['table_side_restored'] += 1
     # colours: neutral + the dominant annotation colour -> blue; every other colour -> gold
     cnt = collections.Counter()
     for d in keep:
