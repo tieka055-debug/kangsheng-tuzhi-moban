@@ -420,6 +420,28 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
                 if tpl.get('caption_block'):   # several drawings above: the caption belongs to the one it sits under most
                     q = max(above, key=lambda q: min(r.x1, q['r'].x1) - max(r.x0, q['r'].x0))
                 q['idx'] += b_['idx']; q['r'] |= r; blocks.remove(b_)
+    # a drawing's caption that ended up glued to a table just below it (e.g. "RECOMMENDED PCB LAYOUT / TOP VIEW" a hair
+    # closer to a parts table than the clustering gap): the flat strip above the table's top rule goes back to the drawing
+    if len(blocks) > 1 and B.get('caption_unglue'):   # brand option (RunQing): on Kangsheng sheets it shrinks the views to clear the title block
+        for b_ in list(blocks):
+            hr = sorted((min(it[1].x, it[2].x), max(it[1].x, it[2].x), it[1].y) for i in b_['idx'] for it in keep[i]['items']
+                        if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3 and abs(it[1].x - it[2].x) > 0.3 * b_['r'].width)
+            if len(hr) < 3: continue
+            ytop = min(h[2] for h in hr)
+            cap = [i for i in b_['idx'] if rects[i].y1 < ytop - 0.5]
+            if not cap or len(cap) == len(b_['idx']): continue
+            cr = fitz.Rect()
+            for i in cap: cr |= rects[i]
+            if cr.is_empty or cr.height > 0.06 * cb.height or any(rects[i].y0 < cr.y1 and rects[i].y1 > cr.y0 for i in b_['idx'] if i not in cap):
+                continue   # not a flat strip clear of the table
+            ups = [q for q in blocks if q is not b_ and 0 <= cr.y0 - q['r'].y1 < 0.06 * cb.height
+                   and min(cr.x1, q['r'].x1) - max(cr.x0, q['r'].x0) > 0.3 * cr.width]
+            if not ups: continue
+            q = max(ups, key=lambda q: min(cr.x1, q['r'].x1) - max(cr.x0, q['r'].x0))
+            b_['idx'] = [i for i in b_['idx'] if i not in cap]; b_['r'] = fitz.Rect()
+            for i in b_['idx']: b_['r'] |= rects[i]
+            q['idx'] += cap; q['r'] |= cr
+            dropped['caption_unglued'] += 1
     if os.environ.get('CAD_DEBUG'):
         for b_ in blocks:
             print('BLOCK', [round(v, 1) for v in b_['r']], len(b_['idx']), file=sys.stderr)
