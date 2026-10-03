@@ -30,6 +30,7 @@
  "grid_label_y": [509.5, 401.2, 293.0, 184.7, 76.5],
  "tolerance_area": [547, 527, 814, 561],
  "tolerance_cols_x": [552, 679],
+ "tolerance_cols3_x": [552, 641, 730],
  "line_extent_fix": true,
  "keepout": [[489, 533, 522, 552]],
  "model_strip_prefixes": ["TF-", "ND-", "BG-"]

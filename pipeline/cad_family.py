@@ -670,6 +670,11 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         if tpl.get('width_cap'): w = min(w, tpl['width_cap'])   # some CAD exports draw leaders/table frames 4-7x heavier than the rest
         # text outlined as tiny stroked triangles (e.g. Foxit-edited PDFs) needs round joins/caps: mitred joins grow spikes
         lj = lc = 1 if tpl.get('round_joins') else 0
+        # glyphs drawn as tiny stroked triangles whose source already uses round joins: keep them round, otherwise the
+        # 0.4pt minimum width with mitred joins grows long spikes on every acute corner
+        if not lj and d.get('lineJoin') == 1 and t in ('s', 'fs') and max(d['rect'].width, d['rect'].height) < 8 \
+                and all(it[0] == 'l' for it in d['items']):
+            lj = lc = 1
         sh.finish(color=col, fill=fil, width=w, closePath=d.get('closePath', False),
                   even_odd=d.get('even_odd', False), lineCap=lc, lineJoin=lj)
     sh.commit()

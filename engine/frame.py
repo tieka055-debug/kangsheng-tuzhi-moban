@@ -203,22 +203,25 @@ def draw_runqing_frame_and_title(page: fitz.Page, fields: dict, assets: dict, br
     first_base, last_base = 538.5, ta.y1 - 2
     flat = [("t", DT._line(r)) for k in ('linear_tolerances', 'angular_tolerances') for r in schema[k]]
     cond = [("c", DT._line(r)) for r in schema['additional_tolerance_conditions']]
-    # 样张排法：档位按行从左到右排成两列（≤5 / >5-30 ；>30 / ANGLE），放不下再退回按类别分列
-    arrangements = ([('rowmajor', flat[0::2], flat[1::2], cond)] if len(flat) > 1 else []) + list(DT._body_arrangements(schema))
-    for mode, left, right, conditions in arrangements:
-        cols = [xs[0]] + ([xs[1]] if right else [])
-        col_w = [(xs[1] - xs[0] - 4) if right else ta.x1 - xs[0] - 4, ta.x1 - xs[1] - 4]
-        rows = max(len(left), len(right)) + len(conditions)
+    # 样张排法：档位按行从左到右排成两列（≤5 / >5-30 ；>30 / ANGLE）；放不下再按类别分列；档位很多（如 4 线性 + 5 角度）时排三列
+    xs3 = brand.get('tolerance_cols3_x', [])
+    arrangements = ([([flat[0::2], flat[1::2]], xs, cond)] if len(flat) > 1 else [])
+    arrangements += [([left, right] if right else [left], xs, conditions) for _, left, right, conditions in DT._body_arrangements(schema)]
+    if xs3 and len(flat) > 2:
+        arrangements.append(([flat[i::3] for i in range(3)], xs3, cond))
+    for columns, cx, conditions in arrangements:
+        col_w = [(cx[c + 1] if c + 1 < len(columns) else ta.x1) - cx[c] - 4 for c in range(len(columns))]
+        rows = max(len(c_) for c_ in columns) + len(conditions)
         for size in (6.5, 6.0, 5.5, 5.0, DT.MIN_FONT_PT):
             step = 13.0 if rows < 3 else min(13.0, (last_base - first_base) / (rows - 1))
             if step < size * 1.25 or first_base + (rows - 1) * step > last_base + .01: continue
-            if any(helv.text_length(t, fontsize=size) > col_w[c] for c, rs in enumerate((left, right)) for _, t in rs): continue
+            if any(helv.text_length(t, fontsize=size) > col_w[c] for c, rs in enumerate(columns) for _, t in rs): continue
             if any(helv.text_length(t, fontsize=size) > ta.x1 - xs[0] - 4 for _, t in conditions): continue
             n = 0
-            for c, rs in enumerate((left, right)):
+            for c, rs in enumerate(columns):
                 for r, (_, t) in enumerate(rs):
-                    page.insert_text((cols[c], first_base + r * step), t, fontname='helv', fontsize=size, color=blue); n += 1
-            base = max(len(left), len(right))
+                    page.insert_text((cx[c], first_base + r * step), t, fontname='helv', fontsize=size, color=blue); n += 1
+            base = max(len(c_) for c_ in columns)
             for r, (_, t) in enumerate(conditions):
                 page.insert_text((xs[0], first_base + (base + r) * step), t, fontname='helv', fontsize=size, color=blue); n += 1
             assert n == sum(len(schema[k]) for k in DT.SCHEMA_KEYS)
