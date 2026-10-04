@@ -170,7 +170,16 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     if probe[0].get_text('words'):
         # live text: convert glyphs to outlines so every character is carried as vector ink
         import subprocess, tempfile
-        ol = Path(tempfile.mkdtemp()) / 'outlined.pdf'
+        tmpd = Path(tempfile.mkdtemp()); ol = tmpd / 'outlined.pdf'
+        pg0 = probe[0]; pr = pg0.rect
+        # (a hairline's rect has zero width/height and Rect |= would skip it: test the corners instead)
+        over = max([0] + [max(pr.x0 - q.x, q.x - pr.x1, pr.y0 - q.y, q.y - pr.y1)
+                          for d in pg0.get_drawings() for q in (d['rect'].tl, d['rect'].br)])
+        if 0.01 < over <= 12:   # only a frame drawn just past the edge; far-away stray objects are not widened for (keeps old outputs)
+            # frame lines drawn just past the page edge would be clipped away by Ghostscript: widen the page first
+            m = 12; big = fitz.open(src_path); bp = big[0]
+            bp.set_mediabox(fitz.Rect(bp.mediabox.x0 - m, bp.mediabox.y0 - m, bp.mediabox.x1 + m, bp.mediabox.y1 + m))
+            src_path = str(tmpd / 'widened.pdf'); big.save(src_path)
         subprocess.run(['gs', '-q', '-dNOPAUSE', '-dBATCH', '-dNoOutputFonts', '-sDEVICE=pdfwrite',
                         '-dFirstPage=1', '-dLastPage=1', f'-sOutputFile={ol}', src_path], check=True)
         src_path = str(ol)
@@ -182,7 +191,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     ff = job.get('furniture_frac'); tpl = {}
     if job.get('template'):
         tpl = json.loads((ROOT / 'families' / 'cad_templates.json').read_text())['templates'][job['template']]
-        ff = tpl['furniture_frac']
+        ff = job.get('furniture_frac') or tpl['furniture_frac']   # a job may override the template for one sheet (SKILL: furniture_frac 临时覆盖)
     D, bb, I, furn = analyse(page, ff, job.get('frame_bottom') or tpl.get('frame_bottom'), job.get('clip'), job.get('frame_search') or tpl.get('frame_search', 0.12))
     keep, dropped = [], collections.Counter()
     def trim(it):
