@@ -676,6 +676,30 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             for i in b_['idx']: mats[i] = (ms, ss)
     doc = fitz.open(); pg = doc.new_page(width=KF.PAGE[0], height=KF.PAGE[1])
     if B.get('background'): pg.insert_image(pg.rect, filename=str(ROOT / B['background']))
+    # embedded raster images inside the drawing area (e.g. a moulded marking drawn as a picture) are technical content:
+    # each travels with the block it overlaps most (or the nearest one), under the vector strokes
+    images_placed = 0
+    placed_blocks = [b_ for lst in (views, rail, slot) for b_ in lst if any(i in mats for i in b_['idx'])]
+    for info in (page.get_image_info(xrefs=True) if placed_blocks else []):
+        ir = fitz.Rect(info['bbox'])
+        if ir.is_empty or not info.get('xref') or not fitz.Rect(I.x0 - 1, I.y0 - 1, I.x1 + 1, I.y1 + 1).contains(ir) or inside_any(ir, furn):
+            continue
+        def _ov(b_):
+            o_ = b_['r'] & ir
+            return o_.width * o_.height if not o_.is_empty else 0
+        def _dist(b_):
+            r_ = b_['r']
+            return max(r_.x0 - ir.x1, ir.x0 - r_.x1, 0) + max(r_.y0 - ir.y1, ir.y0 - r_.y1, 0)
+        best = max(placed_blocks, key=_ov)
+        if _ov(best) == 0: best = min(placed_blocks, key=_dist)
+        m_ = mats[next(i for i in best['idx'] if i in mats)][0]
+        pix = fitz.Pixmap(src, info['xref'])
+        smask = next((im[1] for im in page.get_images(full=True) if im[0] == info['xref']), 0)
+        if smask:
+            pix = fitz.Pixmap(pix, fitz.Pixmap(src, smask))
+        if pix.n - pix.alpha > 3: pix = fitz.Pixmap(fitz.csRGB, pix)
+        pg.insert_image(ir * m_, pixmap=pix, keep_proportion=False)
+        images_placed += 1
     sh = pg.new_shape()
     for n_, d in enumerate(keep):
         if n_ not in mats: continue
@@ -698,10 +722,10 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         if not lj and d.get('lineJoin') == 1 and t in ('s', 'fs') and max(d['rect'].width, d['rect'].height) < 8 \
                 and all(it[0] == 'l' for it in d['items']):
             lj = lc = 1
-        # brand option (RunQing): every small straight-line stroke (a glyph once placed) gets round joins -- the source's
-        # miter limit is not carried over, so mitred glyph corners would otherwise spike out at the default limit
-        if not lj and B.get('round_small_glyphs') and t in ('s', 'fs') and max(d['rect'].width, d['rect'].height) * s < 6 \
-                and all(it[0] == 'l' for it in d['items']):
+        # brand option (RunQing): every stroke gets round joins -- the source's miter limit is not carried over, so mitred
+        # glyph corners (even large dimension text on enlarged sheets) would spike out at the default limit; on drawing
+        # geometry a 0.2pt corner radius is invisible
+        if not lj and B.get('round_small_glyphs') and t in ('s', 'fs'):
             lj = lc = 1
         sh.finish(color=col, fill=fil, width=w, closePath=d.get('closePath', False),
                   even_odd=d.get('even_odd', False), lineCap=lc, lineJoin=lj)
@@ -734,6 +758,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
            'paths_total': len(D), 'paths_placed': len(keep), 'dropped': dict(dropped),
            'dominant_colour_to_blue': dominant, 'other_colours_to_gold': [k for k in cnt if k != dominant],
            'scale': round(s, 4), 'output': str(pdf), 'auto_match': auto,
+           **({'images_placed': images_placed} if images_placed else {}),
            **({'brand': brand, 'model_in_job': model_in_job, 'model_on_sheet': job['model']} if brand != 'kangsheng' else {}),
            'warnings': (['SMALL_SCALE: 缩放 < 0.55，视图会偏小，请看对照图'] if s < 0.55 else [])}
     (out / 'report.json').write_text(json.dumps(rep, ensure_ascii=False, indent=1))
