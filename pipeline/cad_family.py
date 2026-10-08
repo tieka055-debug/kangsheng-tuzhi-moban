@@ -219,7 +219,16 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         r = d['rect']
         fp = tpl.get('frame_pad', 0.5)   # tables drawn up to the outer frame line need a little more slack
         if not fitz.Rect(I.x0 - fp, I.y0 - fp, I.x1 + fp, I.y1 + fp).contains(r):
-            dropped['frame_band'] += 1; continue
+            # brand option (RunQing): a table's rules that overhang the inner frame by a few points (the table was drawn
+            # across the frame line) are table, not frame band: keep paths that are mostly inside, overhang <= 10pt and
+            # carry long horizontal rules
+            inside_ = r & fitz.Rect(I.x0 - fp, I.y0 - fp, I.x1 + fp, I.y1 + fp)
+            if not (B.get('keep_overhang_tables') and not inside_.is_empty and inside_.width >= 0.9 * r.width
+                    and inside_.height >= 0.9 * max(r.height, 0.01) and r.width > 40
+                    and sum(1 for it in d['items'] if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3 and abs(it[1].x - it[2].x) > 40) >= 2
+                    and not any(it[0] == 'l' and abs(it[1].x - it[2].x) < 0.3 and abs(it[1].y - it[2].y) > 0.5 * I.height for it in d['items'])
+                    and r.x1 - (I.x1 + fp) <= 10 and (I.x0 - fp) - r.x0 <= 10):
+                dropped['frame_band'] += 1; continue
         if r.width > 0.9 * I.width or r.height > 0.9 * I.height:
             dropped['frame_rule'] += 1; continue
         # a long straight rule lying on the inner-frame edge (e.g. the title-block top line) is frame, not drawing
@@ -534,7 +543,88 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         slot = [b_ for b_ in views if b_['r'].y0 >= cb.y0 + 0.72 * cb.height]
         if len(slot) == len(views): slot = []
         views = [b_ for b_ in views if b_ not in slot]
-    pullset = set()
+    pullset = set(); brand_pulled = set()
+    if B.get('pull_tables') and views:
+        # brand option (RunQing): a table standing among the views (a model/dimension list, a BOM) joins the right
+        # column, on top, instead of being squeezed small beside the drawings. A table = >=4 stacked horizontal rules
+        # of the same extent, closely spaced.
+        segs_ = collections.defaultdict(list)
+        for q in views:
+            for i in q['idx']:
+                for it in keep[i]['items']:
+                    if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3:
+                        segs_[round(it[1].y / 1.0)].append((min(it[1].x, it[2].x), max(it[1].x, it[2].x), it[1].y))
+        rows_ = []   # a row rule = a connected run of collinear segments (a table rule drawn in pieces still counts)
+        for sg in segs_.values():
+            sg.sort(); cur = list(sg[0])
+            for a_, b_, y_ in sg[1:]:
+                if a_ <= cur[1] + 2.0: cur[1] = max(cur[1], b_)
+                else:
+                    if cur[1] - cur[0] >= 0.05 * cb.width: rows_.append((cur[0], cur[1], cur[2]))
+                    cur = [a_, b_, y_]
+            if cur[1] - cur[0] >= 0.05 * cb.width: rows_.append((cur[0], cur[1], cur[2]))
+        byl = collections.defaultdict(list)
+        for lo_, hi_, y_ in rows_: byl[round(lo_ / 4)].append((y_, lo_, hi_))
+        if os.environ.get('CAD_DEBUG')=='T':
+            print('ROWS',[(round(y),round(lo),round(hi)) for lo,hi,y in rows_],file=sys.stderr)
+        done = []; done_rows = []
+        for rs in byl.values():
+            rs.sort(); cl = [rs[:1]]
+            for r1, r2 in zip(rs, rs[1:]):   # next row: close below, about the same length
+                l1, l2 = r1[2] - r1[1], r2[2] - r2[1]
+                if r2[0] - r1[0] < 0.08 * cb.height and 0.85 <= l2 / l1 <= 1.18: cl[-1].append(r2)
+                else: cl.append([r2])
+            for c_ in cl:
+                if len(c_) >= 4:
+                    gaps_ = sorted(b_[0] - a_[0] for a_, b_ in zip(c_, c_[1:]))
+                    row_h = gaps_[len(gaps_) // 2]   # the last rule closes the last row only if the table has a bottom border of the same length
+                    x0_t, x1_t = min(r[1] for r in c_), max(r[2] for r in c_); ybot = c_[-1][0]; extended = False
+                    while True:   # more rules right below that run across the table (a footer row with its own border): the table goes on
+                        nxt = [y_ for lo_, hi_, y_ in rows_ if ybot + 2 < y_ < ybot + 1.4 * row_h and min(hi_, x1_t) - max(lo_, x0_t) >= 0.5 * (x1_t - x0_t)]
+                        if not nxt: break
+                        ybot = min(nxt); extended = True
+                    done.append(fitz.Rect(x0_t - 1.5, c_[0][0] - 1.0, x1_t + 1.5, ybot + (1.0 if extended else 1.1 * row_h)))
+                    done_rows.append((done[-1], [r[0] for r in c_], row_h))
+        done_rows = [t_ for t_ in done_rows if t_[0].width * t_[0].height < 0.5 * cb.width * cb.height and t_[0].width >= 0.12 * cb.width and t_[0].width >= 3 * t_[2]]
+        done = [t_[0] for t_ in done_rows]
+        mv = []
+        for tr in done:
+            for q in views:   # a rule that runs on past the table (its bottom border joined to another line): clip it to the table
+                for i in q['idx']:
+                    its = keep[i]['items']
+                    if len(its) == 1 and its[0][0] == 'l' and abs(its[0][1].y - its[0][2].y) < 0.3 and tr.y0 <= its[0][1].y <= tr.y1 \
+                            and min(its[0][1].x, its[0][2].x) < tr.x0 - 2 and tr.x0 < max(its[0][1].x, its[0][2].x) and max(its[0][1].x, its[0][2].x) <= tr.x1 + 12:
+                        y_ = its[0][1].y; keep[i]['items'] = [('l', fitz.Point(tr.x0, y_), fitz.Point(min(tr.x1, max(its[0][1].x, its[0][2].x)), y_))]
+                        rects[i] = fitz.Rect(tr.x0, y_ - 0.01, min(tr.x1, max(its[0][1].x, its[0][2].x)), y_ + 0.01); keep[i]['rect'] = rects[i]
+            for q in views:
+                got = [i for i in q['idx'] if i not in mv and rects[i].x0 >= tr.x0 - 0.5 and rects[i].x1 <= tr.x1 + 0.5 and rects[i].y0 >= tr.y0 - 0.5 and rects[i].y1 <= tr.y1 + 0.5]
+                if got and len(got) < len(q['idx']):
+                    q['idx'] = [i for i in q['idx'] if i not in got]; mv += got
+                # a path that only partly lies in the table (grid rules drawn together with other strokes): move just the strokes inside
+                for i in list(q['idx']):
+                    d_ = keep[i]; r_ = rects[i]
+                    if len(d_['items']) < 2 or not r_.intersects(tr) or tr.contains(r_): continue
+                    def _in(it):
+                        P_ = [x for x in it[1:] if isinstance(x, fitz.Point)] or ([it[1].tl, it[1].br] if it[0] == 're' else [])
+                        return bool(P_) and all(tr.x0 - 0.5 <= x.x <= tr.x1 + 0.5 and tr.y0 - 0.5 <= x.y <= tr.y1 + 0.5 for x in P_)
+                    ins = [it for it in d_['items'] if _in(it)]
+                    if not ins or len(ins) == len(d_['items']): continue
+                    outs = [it for it in d_['items'] if not _in(it)]
+                    def _box(its):
+                        P_ = [x for it in its for x in (it[1:] if it[0] != 're' else (it[1].tl, it[1].br)) if isinstance(x, fitz.Point)]
+                        return fitz.Rect(min(x.x for x in P_), min(x.y for x in P_), max(x.x for x in P_), max(x.y for x in P_))
+                    nd = dict(d_); nd['items'] = ins; nd['closePath'] = False; nd['rect'] = _box(ins)
+                    keep.append(nd); rects.append(fitz.Rect(nd['rect'])); mv.append(len(keep) - 1)
+                    d_['items'] = outs; d_['closePath'] = False if d_['type'] == 's' else d_.get('closePath'); d_['rect'] = _box(outs); rects[i] = fitz.Rect(d_['rect'])
+        if mv:
+            pullset |= set(mv); brand_pulled = set(mv)
+            rail.append({'idx': mv, 'r': fitz.Rect(min(rects[i].x0 for i in mv), min(rects[i].y0 for i in mv), max(rects[i].x1 for i in mv), max(rects[i].y1 for i in mv))})
+            dropped['tables_to_rail'] += 1
+            for lst in (views, rail, slot):
+                lst[:] = [q for q in lst if q['idx']]
+                for q in lst:
+                    q['r'] = fitz.Rect()
+                    for i in q['idx']: q['r'] |= rects[i]
     if tpl.get('rail_pull'):
         # house rule for sheets that draw the pin table beside the views: it joins the right column, on top
         for a_, b2, c_, d_ in tpl['rail_pull']:
@@ -570,13 +660,17 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         m_ = fitz.Matrix(sc, 0, 0, sc, x - rb.x0 * sc, y - rb.y0 * sc)
         for b_ in rail:
             for i in b_['idx']: mats[i] = (m_, sc)
-        if rail and tpl.get('rail_stack') and len(rail) > 1:
+        if rail and (tpl.get('rail_stack') or (B.get('pull_tables') and pullset)) and len(rail) > 1:
             # house rule: pin/dimension table top-right, performance notes stacked directly below it
             gap = 8.0
             def is_table(b_):
                 return sum(1 for i in b_['idx'] for it in keep[i]['items'] if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3
                            and abs(it[1].x - it[2].x) > 0.6 * b_['r'].width) >= 4
-            rbp = fitz.Rect(rb.x0 - 1, rb.y0 - 1, rb.x1 + 1, rb.y1 + 1)
+            rb2 = fitz.Rect()   # pieces that travel with the rail are judged against the rail's own content, not against a table the brand rule pulled in
+            for b_ in rail:
+                if not set(b_['idx']) <= brand_pulled: rb2 |= b_['r']
+            if rb2.is_empty: rb2 = rb
+            rbp = fitz.Rect(rb2.x0 - 1, rb2.y0 - 1, rb2.x1 + 1, rb2.y1 + 1)
             for b_ in views:   # pieces of the table (grid lines) that were merged into a view block travel with the rail
                 mv = [i for i in b_['idx'] if rbp.contains(rects[i])]
                 if mv:

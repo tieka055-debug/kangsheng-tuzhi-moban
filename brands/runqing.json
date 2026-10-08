@@ -35,5 +35,7 @@
  "keepout": [[489, 533, 522, 552]],
  "model_strip_prefixes": ["TF-", "ND-", "BG-"],
  "caption_unglue": true,
- "round_small_glyphs": true
+ "round_small_glyphs": true,
+ "pull_tables": true,
+ "keep_overhang_tables": true
 }
