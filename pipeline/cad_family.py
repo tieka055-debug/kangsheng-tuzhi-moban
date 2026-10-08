@@ -287,7 +287,13 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             if cur: groups.append(cur)
         for grp in groups:
             if len(grp) < 3: continue
-            x0 = min(e[0] for e in grp); x1 = max(e[0] for e in grp); src_ = grp[0][2]; yb_ = grp[0][1]
+            x0 = min(e[0] for e in grp); x1 = max(e[0] for e in grp); yb_ = grp[0][1]
+            src_ = grp[0][2]
+            if B.get('skip_unstroked_base'):   # brand option (RunQing)
+                # take a real stroked rule as the pattern; verticals that are only filled shapes have no colour to continue the
+                # border with (it would come out as a black double line), so such groups are skipped
+                src_ = next((e[2] for e in grp if e[2].get('color') is not None and e[2].get('width')), grp[0][2])
+                if src_.get('color') is None: continue
             # the table's row rules may run past the outer columns (their border was the supplier frame): follow them
             rows = [(min(it[1].x, it[2].x), max(it[1].x, it[2].x), it[1].y) for d in keep for it in d['items']
                     if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3 and yb_ - 60 * u_ < it[1].y < yb_ - 1

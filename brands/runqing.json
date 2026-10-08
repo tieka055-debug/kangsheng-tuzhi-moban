@@ -37,5 +37,6 @@
  "caption_unglue": true,
  "round_small_glyphs": true,
  "pull_tables": true,
- "keep_overhang_tables": true
+ "keep_overhang_tables": true,
+ "skip_unstroked_base": true
 }
