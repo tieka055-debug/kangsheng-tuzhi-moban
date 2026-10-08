@@ -15,5 +15,6 @@
  "title_box": [488, 450, 820, 564],
  "tolerance_box": [400, 493, 488, 564],
  "logo": "assets/brand-strip.png",
- "compare_suffix": "原图对照"
+ "compare_suffix": "原图对照",
+ "skip_unstroked_base": true
 }
