@@ -947,7 +947,7 @@
      1
     ]
    ],
-   "round_joins": true
+   "round_joins": true, "rail_stack": true
   },
   "ZY_bc_landscape": {
    "desc": "质源 BC 系列横向图框（内框+外圈格号带，无修订栏）：右下标题栏（未注公差 TOOLERANCE、公司名、品名、图号、签名、比例）；其上方 Pin数/PART NO./DIM 表保留",
