@@ -180,7 +180,10 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             m = 12; big = fitz.open(src_path); bp = big[0]
             bp.set_mediabox(fitz.Rect(bp.mediabox.x0 - m, bp.mediabox.y0 - m, bp.mediabox.x1 + m, bp.mediabox.y1 + m))
             src_path = str(tmpd / 'widened.pdf'); big.save(src_path)
-        subprocess.run(['gs', '-q', '-dNOPAUSE', '-dBATCH', '-dNoOutputFonts', '-sDEVICE=pdfwrite',
+        import shutil
+        gs_exe = next((shutil.which(n) for n in ('gs', 'gswin64c', 'gswin32c') if shutil.which(n)), None)   # Windows names its binary gswin64c
+        if not gs_exe: raise SystemExit('GHOSTSCRIPT_NOT_FOUND: 带文字层的 PDF 需要 Ghostscript（Mac: gs；Windows: gswin64c），请安装并加入 PATH')
+        subprocess.run([gs_exe, '-q', '-dNOPAUSE', '-dBATCH', '-dNoOutputFonts', '-sDEVICE=pdfwrite',
                         '-dFirstPage=1', '-dLastPage=1', f'-sOutputFile={ol}', src_path], check=True)
         src_path = str(ol)
     src = fitz.open(src_path); page = src[0]
@@ -337,8 +340,12 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     if job.get('dominant_colour'):   # a series keeps one colour mapping across all its sheets
         dominant = ckey(tuple(job['dominant_colour']))
     GREEN = (0.0, 1.0, 0.0)
-    def mapc(c):
+    # gold_colours (job or template): these source colours go gold even when they are the dominant/green annotation
+    # colour (e.g. green dimension text the house style wants gold); with gold_views_only the right column stays blue
+    golds = {ckey(tuple(c_)) for c_ in (job.get('gold_colours') or tpl.get('gold_colours') or [])}
+    def mapc(c, in_rail=False):
         if c is None: return None
+        if ckey(c) in golds and not (in_rail and (job.get('gold_views_only') or tpl.get('gold_views_only'))): return GOLD
         if is_neutral(c) or ckey(c) in (dominant, GREEN): return BLUE
         return GOLD
     cb = fitz.Rect()
@@ -541,9 +548,9 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         if len(slot) == len(views): slot = []
         views = [b_ for b_ in views if b_ not in slot]
     pullset = set()
-    if tpl.get('rail_pull'):
+    if job.get('rail_pull') or tpl.get('rail_pull'):
         # house rule for sheets that draw the pin table beside the views: it joins the right column, on top
-        for a_, b2, c_, d_ in tpl['rail_pull']:
+        for a_, b2, c_, d_ in (job.get('rail_pull') or tpl['rail_pull']):
             pr = fitz.Rect(I.x0 + a_ * I.width, I.y0 + b2 * I.height, I.x0 + c_ * I.width, I.y0 + d_ * I.height)
             mv = []
             for q in list(views) + list(rail) + list(slot):
@@ -578,7 +585,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
                         and b_['r'].height >= 0.12 * cb.height)
             back = [b_ for b_ in rail if not is_notes(b_)]
             rail = [b_ for b_ in rail if b_ not in back]; views = views + back
-    mats = {}
+    mats = {}; rail_ids = set()
     RAIL = fitz.Rect(B['rail'].x0, B['rail'].y0, B['rail'].x1 - tpl.get('rail_margin', 0), B['rail'].y1)
     if rail:
         # the right column moves as ONE unit (notes, tables and ordering diagrams keep their relative layout)
@@ -625,12 +632,22 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             for b_ in rail:
                 for i in b_['idx']: mats[i] = (m_, sc)
             x = min(x, xt); rail = rail + top_tables
-        if rail and tpl.get('rail_stack') and len(rail) > 1:
+        if rail and (job.get('rail_stack') or tpl.get('rail_stack')) and len(rail) > 1:
             # house rule: pin/dimension table top-right, performance notes stacked directly below it
             gap = 8.0
             def is_table(b_):
                 return sum(1 for i in b_['idx'] for it in keep[i]['items'] if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3
                            and abs(it[1].x - it[2].x) > 0.6 * b_['r'].width) >= 4
+            # a sliver of a view (e.g. the tip of a 3D view) that fell right of the split goes back with its view,
+            # otherwise stacking drops it on its own into the column
+            back = [b_ for b_ in rail if not any(i in pullset for i in b_['idx']) and not is_table(b_)
+                    and b_['r'].width * b_['r'].height < 0.01 * cb.width * cb.height
+                    and any(fitz.Rect(v['r'].x0 - 2, v['r'].y0 - 2, v['r'].x1 + 2, v['r'].y1 + 2).intersects(b_['r']) for v in views)]
+            if os.environ.get('CAD_DEBUG'): print('RAILB', [[round(v,1) for v in b_['r']] for b_ in rail], 'VIEWS', [[round(v,1) for v in b_['r']] for b_ in views], cb, file=sys.stderr)
+            if back:
+                rail = [b_ for b_ in rail if b_ not in back]; views = views + back
+                rb = fitz.Rect()
+                for b_ in rail: rb |= b_['r']
             rbp = fitz.Rect(rb.x0 - 1, rb.y0 - 1, rb.x1 + 1, rb.y1 + 1)
             for b_ in views:   # pieces of the table (grid lines) that were merged into a view block travel with the rail
                 mv = [i for i in b_['idx'] if rbp.contains(rects[i])]
@@ -668,6 +685,12 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
                 y += b_['r'].height * sc + gap
             x = xl
         rail_x0 = x - 10 if rail else B['views_area'].x1
+        def _texty(b_):   # tables and text notes (what gold_views_only keeps blue); drawings in the column still go gold
+            sz = [max(rects[i].width, rects[i].height) for i in b_['idx']]
+            rules = sum(1 for i in b_['idx'] for it in keep[i]['items'] if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3
+                        and abs(it[1].x - it[2].x) > 0.6 * b_['r'].width)
+            return rules >= 4 or sum(1 for z in sz if z < 0.02 * cb.width) >= 0.95 * len(sz)
+        rail_ids = {i for b_ in rail if _texty(b_) for i in b_['idx']}
     else:
         rail_x0 = B['views_area'].x1
     if top_tables and not any(i in mats for b_ in top_tables for i in b_['idx']):
@@ -777,8 +800,8 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             elif k == 're': sh.draw_rect(it[1] * m)
             elif k == 'qu': sh.draw_quad(it[1] * m)
         t = d['type']
-        col = mapc(d.get('color')) if t in ('s', 'fs') else None
-        fil = mapc(d.get('fill')) if t in ('f', 'fs') else None
+        col = mapc(d.get('color'), n_ in rail_ids) if t in ('s', 'fs') else None
+        fil = mapc(d.get('fill'), n_ in rail_ids) if t in ('f', 'fs') else None
         w = max((d.get('width') or 0) * s, 0.4)
         if tpl.get('width_cap'): w = min(w, tpl['width_cap'])   # some CAD exports draw leaders/table frames 4-7x heavier than the rest
         # text outlined as tiny stroked triangles (e.g. Foxit-edited PDFs) needs round joins/caps: mitred joins grow spikes

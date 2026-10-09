@@ -34,3 +34,38 @@
 ## 数据边界
 
 本仓库只放程序、品牌资产和规范。以下内容**不上传**：供应商原图、成品、型号清单、业务记录 ID、私有路径、令牌。
+
+## 安装（Mac / Windows 都可以）
+
+需要：Python 3.9 以上、Git、Ghostscript（带文字层的 PDF 要先把字转成线条）、一个中文字体文件。回填飞书另需 `lark-cli`（只出图不回填可不装）。
+
+### Mac
+
+```sh
+git clone https://github.com/tieka055-debug/kangsheng-tuzhi-moban.git
+cd kangsheng-tuzhi-moban
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+brew install ghostscript          # 没有 Homebrew 也可以用 conda/micromamba 装到用户目录
+```
+字体：`--font "/System/Library/Fonts/STHeiti Medium.ttc" --font-index 0`
+
+### Windows（PowerShell）
+
+1. 安装 Python（python.org，安装时勾选 **Add python.exe to PATH**）、Git（git-scm.com）、Ghostscript 64 位（ghostscript.com 下载 `gs…w64.exe`）。
+2. 把 Ghostscript 的 `bin` 目录加入 PATH（例如 `C:\Program Files\gs\gs10.04.0\bin`），新开 PowerShell 运行 `gswin64c -v` 能看到版本即可。程序会自动找 `gs` / `gswin64c` / `gswin32c`。
+3. 安装本仓库：
+   ```powershell
+   git clone https://github.com/tieka055-debug/kangsheng-tuzhi-moban.git
+   cd kangsheng-tuzhi-moban
+   py -m venv .venv
+   .venv\Scripts\pip install -r requirements.txt
+   ```
+4. 出图（字体用系统自带的黑体或微软雅黑）：
+   ```powershell
+   .venv\Scripts\python pipeline\cad_family.py job.json --out 输出目录 --font C:\Windows\Fonts\simhei.ttf
+   ```
+   用 `msyh.ttc`（微软雅黑）时加 `--font-index 0`。
+
+### 给其他智能体用
+
+能读写本地文件、能运行命令的智能体（Claude Code、Codex 等）：让它先读 `SKILL.md`、`docs/HANDOFF.md`；批量回填飞书照 `docs/GPT_BATCH_PROMPT.md`。只能聊天、不能运行命令的网页版智能体跑不了。
