@@ -195,7 +195,8 @@ def _house_layout(views, keep, rects, cb, area, reserved, s_plain):
                 if min(abs(dx), abs(dy)) > 0.15 * max(abs(dx), abs(dy)):
                     bins[int(math.degrees(math.atan2(dy, dx)) % 180 // 10)] += 1
         sl = sum(bins.values())
-        return n > 12 and sl > 0.4 * n and sum(1 for v in bins.values() if v >= 0.08 * sl) >= 3
+        if os.environ.get('CAD_DEBUG') == 'iso': print('ISO?', len(idx), n, sl, sorted(bins.items()), file=sys.stderr)
+        return n > 12 and sl >= 0.3 * n and sum(1 for v in bins.values() if v >= 0.08 * sl) >= 3
     # 1. a 3D view that clustered into a neighbouring view block is cut out of it (connected pieces, small gap)
     blocks = []
     gap = 0.004 * cb.width
@@ -218,12 +219,16 @@ def _house_layout(views, keep, rects, cb, area, reserved, s_plain):
         for i in idx: comps[find(i)].append(i)
         whole = box(idx); A = max(1e-6, whole.width * whole.height)
         isos = [c for c in comps.values() if len(c) > 5 and iso(c) and box(c).width * box(c).height > 0.04 * A]
+        big = [c for c in comps.values() if len(c) > 5 and box(c).width * box(c).height > 0.04 * A]
         if isos and len(isos) < len(comps):
             rest = [i for i in idx if not any(i in c for c in isos)]
             for c in isos: blocks.append({'idx': c, 'r': box(c), 'iso': True})
-            blocks.append({'idx': rest, 'r': box(rest), 'iso': iso(rest)})
+            blocks.append({'idx': rest, 'r': box(rest), 'iso': False})
         else:
-            blocks.append({'idx': idx, 'r': box(idx), 'iso': iso(idx)})
+            # a whole block counts as a 3D view only when it is one drawing: a block made of several drawings (e.g. a
+            # 3D view plus halves of other views cut off at the right-column split) must not be carried off as one
+            if os.environ.get('CAD_DEBUG'): print('HOUSE block', [round(v) for v in whole], 'comps', len(comps), 'big', len(big), 'iso', iso(idx), file=sys.stderr)
+            blocks.append({'idx': idx, 'r': box(idx), 'iso': iso(idx) and len(big) <= 1})
     # 2. everything that is not a 3D view keeps its arrangement and moves as one unit: re-packing the other blocks
     # separately can tear a drawing from its own dimensions (seen: a PCB layout's pads split from its outline/DIM labels)
     units = {'rest': {'idx': [], 'r': fitz.Rect(), 'iso': False}}
@@ -720,7 +725,39 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
                         and b_['r'].height >= 0.12 * cb.height)
             back = [b_ for b_ in rail if not is_notes(b_)]
             rail = [b_ for b_ in rail if b_ not in back]; views = views + back
-    mats = {}; rail_ids = set()
+    mats = {}; rail_ids = set(); rail_stacked = False
+    if rail and job.get('rail_text_only'):
+        # Kangsheng column (variant tried by run_layouts): only tables and text notes stay on the right, stacked pin
+        # table first; drawings that sat in the supplier's right column go back with the views
+        def _col(i):
+            return keep[i].get('color') if keep[i]['type'] != 'f' else keep[i].get('fill')
+        def _rules(b_):
+            return sum(1 for i in b_['idx'] for it in keep[i]['items'] if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3
+                       and abs(it[1].x - it[2].x) > 0.6 * b_['r'].width)
+        def _texty_b(b_):   # a table, or text: no path taller than a text line (drawings have tall outlines/extension lines)
+            sz = [max(rects[i].width, rects[i].height) for i in b_['idx']]
+            if _rules(b_) >= 4 or sum(1 for z in sz if z < 0.02 * cb.width) >= 0.95 * len(sz): return True
+            return not any(rects[i].height > 0.04 * cb.height for i in b_['idx'])
+        back = [b_ for b_ in rail if not _texty_b(b_)]
+        # pieces of a drawing cut off at the right-column split touch the rest of that drawing: they go back with it,
+        # otherwise stacking the column tears the drawing in two (seen: half a side view and half a PCB layout)
+        g_ = 0.01 * cb.width
+        grew = True
+        while grew:
+            grew = False
+            for t_ in [b_ for b_ in rail if b_ not in back]:
+                tr = fitz.Rect(t_['r'].x0 - g_, t_['r'].y0 - g_, t_['r'].x1 + g_, t_['r'].y1 + g_)
+                if any(tr.intersects(v_['r']) for v_ in list(views) + back):
+                    back.append(t_); grew = True
+        # a drawing's caption (RECOMMENDED PCB LAYOUT / TOP VIEW …) goes back with it
+        for t_ in [b_ for b_ in rail if b_ not in back and _rules(b_) < 4 and b_['r'].height < 0.08 * cb.height]:
+            for g_ in list(back):
+                xo = min(t_['r'].x1, g_['r'].x1) - max(t_['r'].x0, g_['r'].x0)
+                gap_ = max(t_['r'].y0 - g_['r'].y1, g_['r'].y0 - t_['r'].y1)
+                if xo >= 0.5 * min(t_['r'].width, g_['r'].width) and -2 <= gap_ <= 0.1 * cb.height:
+                    back.append(t_); break
+        if back and len(back) < len(rail):
+            rail = [b_ for b_ in rail if b_ not in back]; views = views + back
     RAIL = fitz.Rect(B['rail'].x0, B['rail'].y0, B['rail'].x1 - tpl.get('rail_margin', 0), B['rail'].y1)
     if rail:
         # the right column moves as ONE unit (notes, tables and ordering diagrams keep their relative layout)
@@ -768,6 +805,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
                 for i in b_['idx']: mats[i] = (m_, sc)
             x = min(x, xt); rail = rail + top_tables
         if rail and (job.get('rail_stack') or tpl.get('rail_stack')) and len(rail) > 1:
+            rail_stacked = True
             # house rule: pin/dimension table top-right, performance notes stacked directly below it
             gap = 8.0
             def is_table(b_):
@@ -803,6 +841,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             order = sorted(units, key=lambda b_: (not any(i in pullset for i in b_['idx']), not is_table(b_), b_['r'].y0))
             wmax = max(b_['r'].width for b_ in order); htot = sum(b_['r'].height for b_ in order) + gap * (len(order) - 1)
             sc = min(rw / wmax, RAIL.height / htot)
+            if job.get('rail_text_only'): sc = min(sc, uni)   # the column's tables/notes never outgrow the drawing: views keep the room
             if tpl.get('rail_cap'): sc = min(sc, tpl['rail_cap'] * uni)
             if os.environ.get('CAD_DEBUG'): print('STACK', [[round(v, 1) for v in u['r']] for u in order], file=sys.stderr)
             y = RAIL.y0; xl = RAIL.x1
@@ -1015,7 +1054,8 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     rep = {'source': job['source'], 'inner_frame': list(I), 'supplier_furniture_rects': [list(r) for r in furn],
            'paths_total': len(D), 'paths_placed': len(keep), 'dropped': dict(dropped),
            'colour_rule': colour_rule, 'dominant_colour_to_blue': dominant, 'other_colours_to_gold': [k for k in cnt if k != dominant],
-           'scale': round(s, 4), 'rail_used_top_table': bool(top_tables) and any(i in mats for b_ in top_tables for i in b_['idx']), 'output': str(pdf), 'auto_match': auto,
+           'scale': round(s, 4), 'rail_used_top_table': bool(top_tables) and any(i in mats for b_ in top_tables for i in b_['idx']),
+           'rail_blocks': len(rail), 'rail_stacked': rail_stacked, 'output': str(pdf), 'auto_match': auto,
            **({'images_placed': images_placed} if images_placed else {}),
            **({'brand': brand, 'model_in_job': model_in_job, 'model_on_sheet': job['model']} if brand != 'kangsheng' else {}),
            'warnings': (['SMALL_SCALE: 缩放 < 0.55，视图会偏小，请看对照图'] if s < 0.55 else [])}
@@ -1042,9 +1082,32 @@ def run_layouts(job, out, font, font_index=0, brand='kangsheng'):
             if 'rotate' not in job: job['rotate'] = auto['rotate']
     if job.get('template') and job['template'] != 'auto':
         tpl = json.loads((ROOT / 'families' / 'cad_templates.json').read_text(encoding='utf-8'))['templates'][job['template']]
-    if (job.get('pin_table_top', tpl.get('pin_table_top'))) != 'auto':
-        return run(job, out, font, font_index, brand)
     import tempfile, shutil
+    if (job.get('pin_table_top', tpl.get('pin_table_top'))) != 'auto':
+        rep = run(job, out, font, font_index, brand)
+        # Kangsheng default (user 2026-10-09: the sheet must not look like the supplier's): when the supplier's right
+        # column holds several blocks that were not re-stacked, also try the Kangsheng column (pin table on top,
+        # notes under it, drawings back to the views) and keep it unless the views lose more than 3%
+        if (brand != 'kangsheng' or rep.get('rail_stacked') or rep.get('rail_blocks', 0) < 2
+                or (job.get('layout') or tpl.get('layout')) in ('sheet', 'plain') or 'rail_stack' in job):
+            return rep
+        d = Path(tempfile.mkdtemp())
+        try:
+            alt = run(dict(job, rail_stack=True, rail_text_only=True), d, font, font_index, brand)
+        except SystemExit:
+            shutil.rmtree(d, ignore_errors=True); return rep
+        out_ = Path(out)
+        if alt.get('rail_stacked') and alt['scale'] >= 0.97 * rep['scale']:
+            for f in out_.iterdir():
+                if f.is_file() and f.name != 'title-font.ttf': f.unlink()
+            for f in d.iterdir(): shutil.copy2(f, out_ / f.name)
+            alt = json.loads((out_ / 'report.json').read_text(encoding='utf-8'))
+            alt['layout_choice'] = 'kangsheng_column'; alt['layout_scales'] = {'plain': rep['scale'], 'kangsheng_column': alt['scale']}
+            alt['output'] = str(out_ / Path(alt['output']).name)
+            (out_ / 'report.json').write_text(json.dumps(alt, ensure_ascii=False, indent=1), encoding='utf-8')
+            rep = alt
+        shutil.rmtree(d, ignore_errors=True)
+        return rep
     variants = [('plain', {'pin_table_top': False}),
                 ('table_top', {'pin_table_top': True, 'rail_notes_only': False}),
                 ('table_top_notes', {'pin_table_top': True, 'rail_notes_only': True, 'fit_search': True})]
