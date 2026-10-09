@@ -685,7 +685,12 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             sz = [max(rects[i].width, rects[i].height) for i in b_['idx']]
             rules = sum(1 for i in b_['idx'] for it in keep[i]['items'] if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3
                         and abs(it[1].x - it[2].x) > 0.6 * b_['r'].width)
-            return rules >= 4 or sum(1 for z in sz if z < 0.02 * cb.width) >= 0.95 * len(sz)
+            if rules >= 4 or sum(1 for z in sz if z < 0.02 * cb.width) >= 0.95 * len(sz): return True
+            # no black/grey outline of any size: coloured notes whose lines are single long glyph paths, not a drawing
+            def _col(i):
+                return keep[i].get('color') if keep[i]['type'] != 'f' else keep[i].get('fill')
+            return not any(_col(i) is not None and is_neutral(_col(i)) and max(rects[i].width, rects[i].height) > 0.03 * cb.width
+                           for i in b_['idx'])
         units_ = []   # overlapping blocks (a table's grid, its text, its restored border) are judged together
         for b_ in rail:
             hit = [u for u in units_ if fitz.Rect(u['r'].x0 - 1, u['r'].y0 - 1, u['r'].x1 + 1, u['r'].y1 + 1).intersects(b_['r'])
@@ -792,6 +797,26 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         if pix.n - pix.alpha > 3: pix = fitz.Pixmap(fitz.csRGB, pix)
         pg.insert_image(ir * m_, pixmap=pix, keep_proportion=False)
         images_placed += 1
+    if brand == 'kangsheng' and not job.get('legacy_colours'):
+        # Kangsheng house colours (user 2026-10-09): product outlines (black/grey) blue; every coloured line in the views --
+        # dimensions, terminals, captions -- gold; the right column's tables and notes blue. A sheet that draws the product
+        # itself in a colour (hardly any black in the views) keeps that colour blue as the outline colour.
+        vcnt = collections.Counter()
+        for n_ in mats:
+            if n_ in rail_ids: continue
+            d = keep[n_]; c = d.get('color') if d['type'] != 'f' else d.get('fill')
+            if c is not None: vcnt['N' if is_neutral(c) else ckey(c)] += 1
+        tot = sum(vcnt.values()); body = None
+        if tot and vcnt['N'] < 0.15 * tot:
+            body = max((k for k in vcnt if k != 'N'), key=lambda k: vcnt[k], default=None)
+        keep_blue = {body, ckey(tuple(job['dominant_colour'])) if job.get('dominant_colour') else None}
+        def mapc(c, in_rail=False):
+            if c is None: return None
+            if in_rail or is_neutral(c) or ckey(c) in keep_blue: return BLUE
+            return GOLD
+        colour_rule = {'rule': 'dims_gold', 'outline_colour': body}
+    else:
+        colour_rule = {'rule': 'dominant_blue'}
     sh = pg.new_shape()
     for n_, d in enumerate(keep):
         if n_ not in mats: continue
@@ -848,7 +873,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     doc.save(pdf, garbage=3, deflate=True)
     rep = {'source': job['source'], 'inner_frame': list(I), 'supplier_furniture_rects': [list(r) for r in furn],
            'paths_total': len(D), 'paths_placed': len(keep), 'dropped': dict(dropped),
-           'dominant_colour_to_blue': dominant, 'other_colours_to_gold': [k for k in cnt if k != dominant],
+           'colour_rule': colour_rule, 'dominant_colour_to_blue': dominant, 'other_colours_to_gold': [k for k in cnt if k != dominant],
            'scale': round(s, 4), 'rail_used_top_table': bool(top_tables) and any(i in mats for b_ in top_tables for i in b_['idx']), 'output': str(pdf), 'auto_match': auto,
            **({'images_placed': images_placed} if images_placed else {}),
            **({'brand': brand, 'model_in_job': model_in_job, 'model_on_sheet': job['model']} if brand != 'kangsheng' else {}),
