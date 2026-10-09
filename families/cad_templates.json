@@ -947,7 +947,8 @@
      1
     ]
    ],
-   "round_joins": true, "rail_stack": true
+   "round_joins": true,
+   "rail_stack": true
   },
   "ZY_bc_landscape": {
    "desc": "质源 BC 系列横向图框（内框+外圈格号带，无修订栏）：右下标题栏（未注公差 TOOLERANCE、公司名、品名、图号、签名、比例）；其上方 Pin数/PART NO./DIM 表保留",
@@ -1106,6 +1107,111 @@
      0.7
     ]
    ]
+  },
+  "JBL_green": {
+   "desc": "金倍利(JINBEILI)绿色图框：整页绿外框（无格号），右上 REV NO/REVISION NOTE/DATE/SIGNATURE 修订栏，右下公司名行+GENERAL TOLERANCE/TITLE/PART NO/DWG NO 标题栏；其上 NO./PART NAME/MATERIAL 零件表保留",
+   "furniture_frac": [
+    [
+     0.575,
+     0.818,
+     1.0,
+     1.0
+    ],
+    [
+     0.657,
+     0.0,
+     1.0,
+     0.075
+    ]
+   ],
+   "fit_search": true
+  },
+  "JBL_black": {
+   "desc": "金倍利(JINBEILI)黑色格号图框：数字 1…12/字母 A…J 外框，右上 REV NO/REVISION NOTE 修订栏，右下公司名行+GENERAL TOLERANCE/TITLE 标题栏（与 JBL_green 同比例）；零件表保留",
+   "furniture_frac": [
+    [
+     0.575,
+     0.818,
+     1.0,
+     1.0
+    ],
+    [
+     0.657,
+     0.0,
+     1.0,
+     0.075
+    ]
+   ],
+   "fit_search": true
+  },
+  "JT_jiate": {
+   "desc": "嘉特(JIATE)图框（原图竖放，rotate 270）：数字/字母格号外框，右上 版本/变更内容/签名/日期 修订栏，右下公司名+品名/型号/设计审核标题栏；其上 序号/零件名称 零件表保留",
+   "furniture_frac": [
+    [
+     0.667,
+     0.77,
+     1.0,
+     1.0
+    ],
+    [
+     0.605,
+     0.0,
+     1.0,
+     0.091
+    ]
+   ],
+   "fit_search": true
+  },
+  "YY_yangyi": {
+   "desc": "阳益/YU HONG DA 图框（原图竖放，rotate 270）：整页外框，右下 TOLERANCE+公司名+TITLE/DWG NO 标题栏",
+   "furniture_frac": [
+    [
+     0.641,
+     0.77,
+     1.0,
+     1.0
+    ]
+   ],
+   "fit_search": true
+  },
+  "JWT_jiaweite": {
+   "desc": "佳伟特图框（与质源同款标题栏：版本REV/未注公差/品名ARTICLE/图号MODEL，公司名在右上角格）：格号外框，右下标题栏；竖放的要 rotate 270",
+   "furniture_frac": [
+    [
+     0.555,
+     0.83,
+     1.0,
+     1.0
+    ]
+   ],
+   "fit_search": true
+  },
+  "LF_lvfeng_full": {
+   "desc": "绿丰(LvFeng)整框版：内外双框，底部零件表(序号/产品名称/材料/电镀)+电路原理图+标题栏都在内框之内（frame_bottom=inner_ring）；去掉右下标题栏、LvFeng logo、右上修订栏，零件表和电路原理图保留",
+   "furniture_frac": [
+    [
+     0.465,
+     0.82,
+     1.0,
+     1.0
+    ],
+    [
+     0.745,
+     0.0,
+     1.0,
+     0.045
+    ],
+    [
+     0.383,
+     0.925,
+     0.465,
+     1.0
+    ]
+   ],
+   "fit_search": true,
+   "frame_bottom": "inner_ring",
+   "width_cap": 1.2,
+   "line_extent_fix": true
   }
  }
 }

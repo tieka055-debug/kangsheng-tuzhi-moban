@@ -997,9 +997,14 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     else:
         colour_rule = {'rule': 'dominant_blue'}
     sh = pg.new_shape()
+    off_sheet = 0   # source ink placed outside the Kangsheng frame (a block placed off the page would silently lose content)
+    FR_ = fitz.Rect(FRAME.x0 - 1, FRAME.y0 - 1, FRAME.x1 + 1, FRAME.y1 + 1)
     for n_, d in enumerate(keep):
         if n_ not in mats: continue
         m, s = mats[n_]
+        if any(not FR_.contains(q * m) for it in d['items'] for q in (it[1:] if it[0] in ('l', 'c') else
+               ([it[1].tl, it[1].br] if it[0] == 're' else [it[1].ul, it[1].lr] if it[0] == 'qu' else []))):
+            off_sheet += 1
         for it in d['items']:
             k = it[0]
             if k == 'l': sh.draw_line(it[1] * m, it[2] * m)
@@ -1058,7 +1063,8 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
            'rail_blocks': len(rail), 'rail_stacked': rail_stacked, 'output': str(pdf), 'auto_match': auto,
            **({'images_placed': images_placed} if images_placed else {}),
            **({'brand': brand, 'model_in_job': model_in_job, 'model_on_sheet': job['model']} if brand != 'kangsheng' else {}),
-           'warnings': (['SMALL_SCALE: 缩放 < 0.55，视图会偏小，请看对照图'] if s < 0.55 else [])}
+           'warnings': (['SMALL_SCALE: 缩放 < 0.55，视图会偏小，请看对照图'] if s < 0.55 else [])
+                       + ([f'OFF_SHEET: {off_sheet} 条原图线条落在图框外（内容可能被切），不要回填，交维护人'] if off_sheet else [])}
     (out / 'report.json').write_text(json.dumps(rep, ensure_ascii=False, indent=1), encoding='utf-8')
     # side-by-side review image
     rv = fitz.open(); r = rv.new_page(width=1700, height=640)
