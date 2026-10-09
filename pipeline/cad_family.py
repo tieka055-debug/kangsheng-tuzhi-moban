@@ -560,7 +560,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
                 q['r'] = fitz.Rect()
                 for i in q['idx']: q['r'] |= rects[i]
     top_tables = []
-    if (tpl.get('pin_table_top') or job.get('pin_table_top')) and slot:
+    if (job['pin_table_top'] if 'pin_table_top' in job else tpl.get('pin_table_top')) is True and slot:
         # house rule (SKILL): the pin/dimension table sits top-right and the performance notes stack right under it,
         # so a table found at the bottom of the sheet joins the top of the right column instead of the bottom slot
         def n_rules(b_):
@@ -569,7 +569,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         top_tables = []
         for b_ in [q for q in slot if n_rules(q) >= 3]:
             slot.remove(b_); top_tables.append(b_)
-        if top_tables and (tpl.get('rail_notes_only') or job.get('rail_notes_only')):
+        if top_tables and (job['rail_notes_only'] if 'rail_notes_only' in job else tpl.get('rail_notes_only')):
             # the right column then carries only the table and the text notes; drawings that sat on the right
             # (PCB layout, 3D view, captions) go back to the views so the column stays clean and the views get the room
             def is_notes(b_):
@@ -714,7 +714,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
                     placed = (s_try, fitz.Matrix(s_try, 0, 0, s_try, ox_ - vb.x0 * s_try, oy_ - vb.y0 * s_try)); break
             s_try *= 0.99
         return placed
-    if tpl.get('fit_search'): placed = _fit_search(placed)
+    if (job['fit_search'] if 'fit_search' in job else tpl.get('fit_search')): placed = _fit_search(placed)
     while placed is None and s > s_floor:
         ox = area.x0 + (area.width - vb.width * s) / 2; oy = area.y0 + max(0, (area.height - vb.height * s) / 2)
         if tpl.get('views_top'):   # tall view stacks: hang from the top so only the bottom has to clear the title block
@@ -723,7 +723,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         if not any((rects[i] * m).intersects(K) for K in KEEPOUT for b_ in views for i in b_['idx']):
             placed = (s, m); break
         s *= 0.98
-    if placed is None and not tpl.get('fit_search'):   # views fill the sheet and the plain shrink-around-centre cannot clear the title block: search positions instead of giving up
+    if placed is None and not (job['fit_search'] if 'fit_search' in job else tpl.get('fit_search')):   # views fill the sheet and the plain shrink-around-centre cannot clear the title block: search positions instead of giving up
         placed = _fit_search(placed)
     if placed is None:
         if os.environ.get('CAD_DEBUG'): print('NOROOM', vb, area, s, RESERVED, len(views), file=sys.stderr)
@@ -823,7 +823,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     rep = {'source': job['source'], 'inner_frame': list(I), 'supplier_furniture_rects': [list(r) for r in furn],
            'paths_total': len(D), 'paths_placed': len(keep), 'dropped': dict(dropped),
            'dominant_colour_to_blue': dominant, 'other_colours_to_gold': [k for k in cnt if k != dominant],
-           'scale': round(s, 4), 'output': str(pdf), 'auto_match': auto,
+           'scale': round(s, 4), 'rail_used_top_table': bool(top_tables) and any(i in mats for b_ in top_tables for i in b_['idx']), 'output': str(pdf), 'auto_match': auto,
            **({'images_placed': images_placed} if images_placed else {}),
            **({'brand': brand, 'model_in_job': model_in_job, 'model_on_sheet': job['model']} if brand != 'kangsheng' else {}),
            'warnings': (['SMALL_SCALE: 缩放 < 0.55，视图会偏小，请看对照图'] if s < 0.55 else [])}
@@ -837,12 +837,54 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     return rep
 
 
+def run_layouts(job, out, font, font_index=0, brand='kangsheng'):
+    """pin_table_top 'auto' (template or job): try the house layout (pin/dimension table top-right, notes under it)
+    and keep it unless it costs the views noticeably; otherwise keep the plain layout. Picks by the views' scale."""
+    tpl = {}
+    if not job.get('template') or job.get('template') == 'auto':
+        import frame_match as fm
+        auto = fm.match(job['source'], job.get('clip'))
+        if auto['status'] == 'OK':
+            job = dict(job, template=auto['template'])
+            if auto.get('search') and 'frame_search' not in job: job['frame_search'] = auto['search']
+            if 'rotate' not in job: job['rotate'] = auto['rotate']
+    if job.get('template') and job['template'] != 'auto':
+        tpl = json.loads((ROOT / 'families' / 'cad_templates.json').read_text())['templates'][job['template']]
+    if (job.get('pin_table_top', tpl.get('pin_table_top'))) != 'auto':
+        return run(job, out, font, font_index, brand)
+    import tempfile, shutil
+    variants = [('plain', {'pin_table_top': False}),
+                ('table_top', {'pin_table_top': True, 'rail_notes_only': False}),
+                ('table_top_notes', {'pin_table_top': True, 'rail_notes_only': True, 'fit_search': True})]
+    res = []
+    for name, ov in variants:
+        d = Path(tempfile.mkdtemp())
+        try:
+            rep = run(dict(job, **ov), d, font, font_index, brand)
+            res.append((name, rep, d))
+        except SystemExit:
+            shutil.rmtree(d, ignore_errors=True)
+    if not res: raise SystemExit('LAYOUT_FAILED')
+    plain = next((r for r in res if r[0] == 'plain'), None)
+    tops = [r for r in res if r[0] != 'plain' and r[1].get('rail_used_top_table')]
+    best = max(tops, key=lambda r: r[1]['scale']) if tops else None
+    pick = best if best and (plain is None or best[1]['scale'] >= 0.9 * plain[1]['scale']) else (plain or res[0])
+    out = Path(out); out.mkdir(parents=True, exist_ok=True)
+    for f in pick[2].iterdir(): shutil.copy2(f, out / f.name)
+    rep = json.loads((out / 'report.json').read_text()); rep['layout_choice'] = pick[0]
+    rep['layout_scales'] = {r[0]: r[1]['scale'] for r in res}
+    (out / 'report.json').write_text(json.dumps(rep, ensure_ascii=False, indent=1))
+    for r in res: shutil.rmtree(r[2], ignore_errors=True)
+    print(json.dumps({'layout_choice': pick[0], 'layout_scales': rep['layout_scales']}, ensure_ascii=False))
+    return rep
+
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('job'); ap.add_argument('--out', required=True)
     ap.add_argument('--font', required=True); ap.add_argument('--font-index', type=int, default=0)
     ap.add_argument('--brand', choices=BR.BRANDS, default='kangsheng', help='目标品牌；不传 = 康生（行为与以前完全一致）')
     a = ap.parse_args()
-    run(json.loads(Path(a.job).read_text()), a.out, a.font, a.font_index, a.brand)
+    run_layouts(json.loads(Path(a.job).read_text()), a.out, a.font, a.font_index, a.brand)
 
 
 if __name__ == '__main__':
