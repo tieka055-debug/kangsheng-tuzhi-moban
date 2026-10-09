@@ -9,7 +9,7 @@ from pathlib import Path
 import fitz
 
 ROOT = Path(__file__).resolve().parents[1]
-ap = argparse.ArgumentParser(); ap.add_argument('cases'); ap.add_argument('--base', default='a4ea190'); ap.add_argument('--jobs', type=int, default=4)
+ap = argparse.ArgumentParser(); ap.add_argument('cases'); ap.add_argument('--base', default='b2be2cf'); ap.add_argument('--jobs', type=int, default=4)
 a = ap.parse_args()
 C = Path(a.cases).resolve(); cases = json.load(open(C / 'cases.json')); font = C / 'font.otf'
 tmp = Path(tempfile.mkdtemp())
