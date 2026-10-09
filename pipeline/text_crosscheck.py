@@ -5,7 +5,7 @@ import pymupdf as fitz
 sys.path.insert(0, __file__.rsplit('/', 1)[0]); import auto_manifest as am
 
 def check(src, manifest, draft_pdf, family):
-    m = json.loads(open(manifest).read())
+    m = json.loads(open(manifest, encoding='utf-8').read())
     d, p, rot = am.normalized(m['source']['path'])
     tb_like = [fitz.Rect(e['box']) for e in m['coverage']['exclude']]
     carried = [fitz.Rect(c) for g in m['groups'] if g['kind'] not in ('tolerance', 'projection') for c in g['clips']]
@@ -23,7 +23,7 @@ def check(src, manifest, draft_pdf, family):
     return {'source_content_words': sum(need.values()), 'missing': missing}
 
 if __name__ == '__main__':
-    fam = json.load(open(sys.argv[1]))
+    fam = json.load(open(sys.argv[1], encoding='utf-8'))
     for run_dir in sys.argv[2:]:
         r = check(None, run_dir + '/manifest.json', run_dir + '/draft/draft.pdf', fam)
         print(run_dir.split('/')[-1], r['source_content_words'], 'missing:', r['missing'])

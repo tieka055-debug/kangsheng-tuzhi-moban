@@ -1122,7 +1122,7 @@ def main():
     ap.add_argument('--font-index', type=int, default=0, help='face index when --font is a .ttc collection')
     a = ap.parse_args()
     global CLIP_MODE, RELAXED_RAIL, NO_FALLBACK; CLIP_MODE = a.clip_mode; RELAXED_RAIL = a.relaxed_rail; NO_FALLBACK = a.no_fallback
-    family = json.loads(Path(a.family).read_text())
+    family = json.loads(Path(a.family).read_text(encoding='utf-8'))
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     report = {'source': a.source, 'source_sha256': sha(a.source), 'clip_mode': CLIP_MODE, 'relaxed_rail': RELAXED_RAIL}
     try:
@@ -1143,7 +1143,7 @@ def main():
         font_out = (out / 'title-font.ttf').resolve()
         (_cff_to_ttf(tf) if 'CFF ' in tf else tf).save(font_out)
         m = to_manifest(A, src, family, out, font_out, Path(a.assets))
-        (out / 'manifest.json').write_text(json.dumps(m, ensure_ascii=False, indent=1))
+        (out / 'manifest.json').write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding='utf-8')
         report.update(status='MANIFEST_WRITTEN', rotation=A['rot'], seconds=round(A['seconds'], 3),
                       fields=A['fields'], field_flags=A['field_flags'], flags=sorted(set(A['flags'])),
                       unknown_excluded_text=A['unknown'], watermark_words=A['wm'], watermark_conflicts=A['wm_conflict'],
@@ -1152,7 +1152,7 @@ def main():
                       exclusions=len(m['coverage']['exclude']))
     except Blocked as e:
         report.update(status='BLOCKED', reason=str(e))
-    (out / 'auto-report.json').write_text(json.dumps(report, ensure_ascii=False, indent=1))
+    (out / 'auto-report.json').write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding='utf-8')
     print(json.dumps({k: report.get(k) for k in ('status', 'reason', 'flags', 'fields', 'field_flags')}, ensure_ascii=False))
 
 

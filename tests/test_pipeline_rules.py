@@ -7,7 +7,7 @@ import auto_manifest as am
 
 class FamilyConfigTest(unittest.TestCase):
     def test_family_has_only_relative_rules(self):
-        fam = json.loads((ROOT / 'families' / 'zhiyuan.json').read_text())
+        fam = json.loads((ROOT / 'families' / 'zhiyuan.json').read_text(encoding='utf-8'))
         self.assertEqual(fam['color_profile'], 'nonblack-gold-v1')
         self.assertGreaterEqual(fam['layout']['min_font_pt'], 4.75)
         self.assertIn('fallback_performance_min_font_pt', fam['layout'])

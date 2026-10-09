@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'pipeline'))
 import fitz, frame_match as fm
 
 src, out_path = sys.argv[1], sys.argv[2]
-out = json.load(open(out_path)) if os.path.exists(out_path) else {}
+out = json.load(open(out_path, encoding='utf-8')) if os.path.exists(out_path) else {}
 sigs = fm.load()
 for pdf in sorted(glob.glob(os.path.join(src, '*.pdf'))):
     k = Path(pdf).stem
@@ -20,5 +20,5 @@ for pdf in sorted(glob.glob(os.path.join(src, '*.pdf'))):
     except BaseException as e:
         r = {'status': 'ERR', 'err': str(e)[:80]}
     out[k] = r
-    json.dump(out, open(out_path, 'w'), ensure_ascii=False)
+    json.dump(out, open(out_path, 'w', encoding='utf-8'), ensure_ascii=False)
     print(k, r.get('status'), r.get('template'), r.get('score'), flush=True)

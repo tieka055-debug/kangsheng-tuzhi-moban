@@ -10,9 +10,11 @@ plan.json：[{"record_id": "...", "source_key": "原图名的一部分", "file":
 - 每个上传后下载回来比对 SHA256；结果写 result.json。
 - 下载路径一律用相对路径（lark-cli 对绝对路径会静默失败）。
 base/table/字段 ID 属于业务数据，不要写进仓库，运行时传参。"""
-import argparse, hashlib, json, os, subprocess, time
+import argparse, hashlib, json, os, shutil, subprocess, time
 from collections import Counter
 from pathlib import Path
+
+LARK = shutil.which('lark-cli') or 'lark-cli'   # Windows installs it as lark-cli.cmd, which a bare name does not find
 
 
 def main():
@@ -26,14 +28,14 @@ def main():
     sha = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
     def lark(*x):
-        p = subprocess.run(['lark-cli', 'base', *x, '--as', 'user'], capture_output=True, text=True)
+        p = subprocess.run([LARK, 'base', *x, '--as', 'user'], capture_output=True, text=True, encoding='utf-8')
         try: return json.loads(p.stdout)
         except Exception: return {'ok': False, 'raw': (p.stdout + p.stderr)[-400:]}
 
-    subprocess.run(['lark-cli', 'base', '+record-list', '--base-token', B, '--table-id', T, '--as', 'user',
+    subprocess.run([LARK, 'base', '+record-list', '--base-token', B, '--table-id', T, '--as', 'user',
                     '--format', 'ndjson', '--output', 'before.ndjson', '--overwrite'], capture_output=True)
-    recs = {r['record_id']: r for r in map(json.loads, filter(str.strip, open('before.ndjson')))}
-    plan = json.load(open(plan_path)); res = []
+    recs = {r['record_id']: r for r in map(json.loads, filter(str.strip, open('before.ndjson', encoding='utf-8')))}
+    plan = json.load(open(plan_path, encoding='utf-8')); res = []
     for i, it in enumerate(plan):
         rid = it['record_id']; r = recs.get(rid); f = Path(it['file']); row = dict(it)
         if not r or not f.exists():
@@ -65,7 +67,7 @@ def main():
             ok = any(sha(p) == want for p in d.iterdir() if p.is_file())
         row.update(status='UPLOADED_VERIFIED' if ok else 'UPLOADED_NOT_VERIFIED', token=tok, sha256=want)
         res.append(row); print('完成' if ok else '已上传但回读未核对上', f.name, flush=True)
-    json.dump(res, open('result.json', 'w'), ensure_ascii=False, indent=1)
+    json.dump(res, open('result.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     print(dict(Counter(x['status'] for x in res)))
 
 

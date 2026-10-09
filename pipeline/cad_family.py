@@ -193,7 +193,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         page.remove_rotation()   # work in the upright drawing orientation
     ff = job.get('furniture_frac'); tpl = {}
     if job.get('template'):
-        tpl = json.loads((ROOT / 'families' / 'cad_templates.json').read_text())['templates'][job['template']]
+        tpl = json.loads((ROOT / 'families' / 'cad_templates.json').read_text(encoding='utf-8'))['templates'][job['template']]
         ff = job.get('furniture_frac') or tpl['furniture_frac']   # a job may override the template for one sheet (SKILL: furniture_frac 临时覆盖)
     D, bb, I, furn = analyse(page, ff, job.get('frame_bottom') or tpl.get('frame_bottom'), job.get('clip'), job.get('frame_search') or tpl.get('frame_search', 0.12))
     keep, dropped = [], collections.Counter()
@@ -878,7 +878,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
            **({'images_placed': images_placed} if images_placed else {}),
            **({'brand': brand, 'model_in_job': model_in_job, 'model_on_sheet': job['model']} if brand != 'kangsheng' else {}),
            'warnings': (['SMALL_SCALE: 缩放 < 0.55，视图会偏小，请看对照图'] if s < 0.55 else [])}
-    (out / 'report.json').write_text(json.dumps(rep, ensure_ascii=False, indent=1))
+    (out / 'report.json').write_text(json.dumps(rep, ensure_ascii=False, indent=1), encoding='utf-8')
     # side-by-side review image
     rv = fitz.open(); r = rv.new_page(width=1700, height=640)
     r.show_pdf_page(fitz.Rect(5, 20, 845, 635), src, 0, clip=bb)
@@ -900,7 +900,7 @@ def run_layouts(job, out, font, font_index=0, brand='kangsheng'):
             if auto.get('search') and 'frame_search' not in job: job['frame_search'] = auto['search']
             if 'rotate' not in job: job['rotate'] = auto['rotate']
     if job.get('template') and job['template'] != 'auto':
-        tpl = json.loads((ROOT / 'families' / 'cad_templates.json').read_text())['templates'][job['template']]
+        tpl = json.loads((ROOT / 'families' / 'cad_templates.json').read_text(encoding='utf-8'))['templates'][job['template']]
     if (job.get('pin_table_top', tpl.get('pin_table_top'))) != 'auto':
         return run(job, out, font, font_index, brand)
     import tempfile, shutil
@@ -922,9 +922,9 @@ def run_layouts(job, out, font, font_index=0, brand='kangsheng'):
     pick = best if best and (plain is None or best[1]['scale'] >= 0.9 * plain[1]['scale']) else (plain or res[0])
     out = Path(out); out.mkdir(parents=True, exist_ok=True)
     for f in pick[2].iterdir(): shutil.copy2(f, out / f.name)
-    rep = json.loads((out / 'report.json').read_text()); rep['layout_choice'] = pick[0]
+    rep = json.loads((out / 'report.json').read_text(encoding='utf-8')); rep['layout_choice'] = pick[0]
     rep['layout_scales'] = {r[0]: r[1]['scale'] for r in res}
-    (out / 'report.json').write_text(json.dumps(rep, ensure_ascii=False, indent=1))
+    (out / 'report.json').write_text(json.dumps(rep, ensure_ascii=False, indent=1), encoding='utf-8')
     for r in res: shutil.rmtree(r[2], ignore_errors=True)
     print(json.dumps({'layout_choice': pick[0], 'layout_scales': rep['layout_scales']}, ensure_ascii=False))
     return rep
@@ -932,10 +932,13 @@ def run_layouts(job, out, font, font_index=0, brand='kangsheng'):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('job'); ap.add_argument('--out', required=True)
-    ap.add_argument('--font', required=True); ap.add_argument('--font-index', type=int, default=0)
+    ap.add_argument('--font', help='标题字体；不传 = 自动找系统黑体（Mac STHeiti / Windows SimHei，见 engine/fonts.py）')
+    ap.add_argument('--font-index', type=int, default=0)
     ap.add_argument('--brand', choices=BR.BRANDS, default='kangsheng', help='目标品牌；不传 = 康生（行为与以前完全一致）')
     a = ap.parse_args()
-    run_layouts(json.loads(Path(a.job).read_text()), a.out, a.font, a.font_index, a.brand)
+    import fonts as FT
+    font, fi = FT.resolve(a.font, a.font_index)
+    run_layouts(json.loads(Path(a.job).read_text(encoding='utf-8')), a.out, font, fi, a.brand)
 
 
 if __name__ == '__main__':

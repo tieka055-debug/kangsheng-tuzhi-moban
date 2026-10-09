@@ -175,7 +175,7 @@ def load_tolerance_reflow(cfg,manifest_path,check_source_raster=True):
     for path,key in [(source_map,'source_map_sha256'),(layout_path,'layout_sha256'),
                      (approved_pdf,'approved_pdf_sha256')]:
         require(path.is_file() and digest(path)==ref[key],f'Approved tolerance evidence changed: {key}')
-    evidence=json.loads(source_map.read_text());layout=json.loads(layout_path.read_text())
+    evidence=json.loads(source_map.read_text(encoding='utf-8'));layout=json.loads(layout_path.read_text(encoding='utf-8'))
     require(evidence['source_sha256']==cfg['source']['sha256']==layout['source_sha256']
             and evidence['record_id']==cfg['identity']['record_id']
             and evidence['model']==cfg['fields']['model']==layout['fields']['model'],
@@ -214,7 +214,7 @@ def load_tolerance_reflow(cfg,manifest_path,check_source_raster=True):
     review_path=resolve(base,evidence['field_review_report'])
     require(review_path.is_file() and digest(review_path)==evidence['field_review_report_sha256'],
             'Independent tolerance field comparison evidence missing or changed')
-    review=json.loads(review_path.read_text())
+    review=json.loads(review_path.read_text(encoding='utf-8'))
     reviewed=[row for row in review.get('rows',[]) if row.get('record_id')==evidence['record_id']]
     require(review.get('reviewer_identifier') and len(reviewed)==1,
             'Independent tolerance field comparison did not identify this product')
@@ -230,7 +230,7 @@ def load_tolerance_reflow(cfg,manifest_path,check_source_raster=True):
         ext_path=resolve(base,evidence['external_condition_review_report'])
         require(ext_path.is_file() and digest(ext_path)==evidence['external_condition_review_report_sha256'],
                 'Independent external condition evidence missing or changed')
-        ext_report=json.loads(ext_path.read_text())
+        ext_report=json.loads(ext_path.read_text(encoding='utf-8'))
         ext_rows=[x for x in ext_report.get('rows',[]) if x.get('record_id')==evidence['record_id']]
         require(len(ext_rows)==1 and ext_rows[0].get('source_sha256')==evidence['source_sha256'],
                 'External condition review/source identity differs')
@@ -267,7 +267,7 @@ def validate_approved_uniform_scales(cfg,manifest_path):
     layout_path=resolve(base,ref['layout_path'])
     require(layout_path.is_file() and digest(layout_path)==ref['layout_sha256'],
             'Approved view scale reference missing or changed')
-    layout=json.loads(layout_path.read_text())
+    layout=json.loads(layout_path.read_text(encoding='utf-8'))
     require(layout['source_sha256']==cfg['source']['sha256'],
             'Approved view scales belong to a different source')
     approved_pdf=resolve(base,layout['output'])
@@ -401,7 +401,7 @@ def restored_rule_vector_checks(page,cfg):
 
 
 def read_manifest(path,check_review=True):
-    path=Path(path).resolve(); cfg=json.loads(path.read_text())
+    path=Path(path).resolve(); cfg=json.loads(path.read_text(encoding='utf-8'))
     if cfg.get('supplier_id') == 'zhiyuan-precision':
         require(cfg.get('source_fields'), 'Current supplier requires a complete reviewed source_fields ledger')
     schema=cfg.get('schema_version')
@@ -707,7 +707,7 @@ def cached_source(cfg,source,cache):
     key=hashlib.sha256(canonical(key_input)).hexdigest()[:24]
     neutral=cache/(key+'-source.pdf');colored=cache/(key+'-blue.pdf');info=cache/(key+'.json')
     if neutral.exists() and colored.exists() and info.exists():
-        old=json.loads(info.read_text())
+        old=json.loads(info.read_text(encoding='utf-8'))
         expected_meta={'source_sha256':original_sha,'render_source_sha256':render_source_sha,
                        'object_exclusion':binding}
         if (all(old.get(k)==v for k,v in expected_meta.items())
@@ -733,7 +733,7 @@ def cached_source(cfg,source,cache):
                                 'colored_sha256':digest(colored),
                                 'source_sha256':original_sha,
                                 'render_source_sha256':render_source_sha,
-                                'object_exclusion':binding},indent=2))
+                                'object_exclusion':binding},indent=2), encoding='utf-8')
     return neutral,colored,used,False
 
 
@@ -1259,7 +1259,7 @@ def write_final_review_template(path,cfg,source,output,board,details):
 
 
 def save_json(path,obj):
-    Path(path).write_text(json.dumps(obj,ensure_ascii=False,indent=2)+'\n')
+    Path(path).write_text(json.dumps(obj,ensure_ascii=False,indent=2)+'\n', encoding='utf-8')
 
 
 def write_provenance(outdir,cfg,manifest,source,assets,audit):
@@ -1397,7 +1397,7 @@ def _locked_state(root):
                 time.sleep(.02)
         path=root/'batch-state.json'
         if path.exists():
-            state=json.loads(path.read_text())
+            state=json.loads(path.read_text(encoding='utf-8'))
             require(state.get('schema_version')==CONTROL_SCHEMA,
                     'Legacy/unknown batch-state.json: migration is not supported; preserve it and stop')
             require(isinstance(state.get('runs'),dict) and isinstance(state.get('jobs'),dict)
@@ -1445,11 +1445,11 @@ def _success_valid(success,recipe,stage):
             return False
         if digest(out/ARTIFACTS[stage][0])!=success.get('artifact_sha256'):
             return False
-        audit=json.loads((out/ARTIFACTS[stage][1]).read_text())
+        audit=json.loads((out/ARTIFACTS[stage][1]).read_text(encoding='utf-8'))
         if audit.get('pass') is not True or digest(out/ARTIFACTS[stage][1])!=success.get('audit_sha256'):
             return False
         if stage=='build':
-            run=json.loads((out/'run.json').read_text())
+            run=json.loads((out/'run.json').read_text(encoding='utf-8'))
             if run.get('inventory_sha256')!=recipe or run.get('output_sha256')!=success['artifact_sha256']:
                 return False
     except (OSError,ValueError,KeyError):
@@ -1460,8 +1460,8 @@ def _success_valid(success,recipe,stage):
 def _release_ready(success):
     out=Path(success['run_dir'])
     try:
-        release=json.loads((out/'release.json').read_text())
-        review=json.loads((out/'review.snapshot.json').read_text())
+        release=json.loads((out/'release.json').read_text(encoding='utf-8'))
+        review=json.loads((out/'review.snapshot.json').read_text(encoding='utf-8'))
         return (release.get('release_ready') is True
                 and release.get('inventory_sha256')==success['inventory_sha256']
                 and release.get('output_sha256')==success['artifact_sha256']
@@ -1470,7 +1470,7 @@ def _release_ready(success):
                 and review.get('verdict')=='PASS'
                 and review.get('inventory_sha256')==success['inventory_sha256']
                 and review.get('output_sha256')==success['artifact_sha256']
-                and json.loads((out/'verify.json').read_text()).get('pass') is True)
+                and json.loads((out/'verify.json').read_text(encoding='utf-8')).get('pass') is True)
     except (OSError,ValueError,KeyError):
         return False
 
@@ -1484,7 +1484,7 @@ def _run_stage(args,stage,record_id=None,output_for_attempt=None):
     root=_control_path(args)
     manifest=Path(args.manifest).resolve()
     # Validate identity and source bytes before opening the ledger or starting expensive PDF work.
-    cfg=json.loads(manifest.read_text())
+    cfg=json.loads(manifest.read_text(encoding='utf-8'))
     record_id,source_sha=_identity(cfg,record_id)
     source=resolve(manifest.parent,cfg['source']['path'])
     require(source.is_file(),'Source PDF missing')
@@ -1634,7 +1634,7 @@ def verify(args):
                      render_array(expected_doc[0]),source_quality,inventory_page)
     audit['visual_review_pass']=False
     if args.review:
-        review=json.loads(Path(args.review).read_text())
+        review=json.loads(Path(args.review).read_text(encoding='utf-8'))
         require(review.get('source_sha256')==digest(source) and review.get('output_sha256')==digest(output)
             and review.get('inventory_sha256')==inventory_hash(cfg),'Visual review evidence hash mismatch')
         require(review.get('verdict')=='PASS' and review.get('reviewer') and review.get('checks'), 'Incomplete visual review evidence')
@@ -1681,7 +1681,7 @@ def recheck_candidate(args):
     report=Path(args.report).resolve()
     recipe=inventory_hash(cfg);output_sha=digest(output)
     if report.is_file():
-        old=json.loads(report.read_text())
+        old=json.loads(report.read_text(encoding='utf-8'))
         if (old.get('recipe_sha256')==recipe and old.get('output_sha256')==output_sha
                 and old.get('engine_sha256')==digest(__file__)
                 and old.get('frame_sha256')==digest(Path(__file__).with_name('frame.py'))
@@ -1790,10 +1790,10 @@ def main():
     p=subs.add_parser('reset-attempts');p.add_argument('--control-root',required=True);p.add_argument('--record-id',required=True);p.add_argument('--source-sha256',required=True);p.add_argument('--stage',choices=['draft','build'],required=True);p.add_argument('--operator',required=True);p.add_argument('--reason',required=True);p.set_defaults(func=reset_attempts)
     p=subs.add_parser('verify');p.add_argument('manifest');p.add_argument('pdf');p.add_argument('--cache');p.add_argument('--review');p.add_argument('--report');p.set_defaults(func=verify)
     p=subs.add_parser('recheck-candidate');p.add_argument('manifest');p.add_argument('pdf');p.add_argument('--cache');p.add_argument('--report',required=True);p.set_defaults(func=recheck_candidate)
-    p=subs.add_parser('inventory-hash');p.add_argument('manifest');p.set_defaults(func=lambda a: print(inventory_hash(json.loads(Path(a.manifest).read_text()))))
+    p=subs.add_parser('inventory-hash');p.add_argument('manifest');p.set_defaults(func=lambda a: print(inventory_hash(json.loads(Path(a.manifest).read_text(encoding='utf-8')))))
     p=subs.add_parser('hashes');p.add_argument('manifest');p.set_defaults(func=lambda a: print(json.dumps({
-        'source_inventory_sha256':source_inventory_hash(json.loads(Path(a.manifest).read_text())),
-        'inventory_sha256':inventory_hash(json.loads(Path(a.manifest).read_text()))},ensure_ascii=False)))
+        'source_inventory_sha256':source_inventory_hash(json.loads(Path(a.manifest).read_text(encoding='utf-8'))),
+        'inventory_sha256':inventory_hash(json.loads(Path(a.manifest).read_text(encoding='utf-8')))},ensure_ascii=False)))
     args=parser.parse_args()
     try:
         result=args.func(args)

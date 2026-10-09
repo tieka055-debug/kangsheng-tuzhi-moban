@@ -81,7 +81,7 @@ def score(g, proto):
 
 
 def load():
-    return json.load(open(SIGS)) if SIGS.exists() else {'samples': []}
+    return json.load(open(SIGS, encoding='utf-8')) if SIGS.exists() else {'samples': []}
 
 
 def candidates(pdf, clip=None, page_no=0):
@@ -123,7 +123,7 @@ def learn(template, pdf, rotate=0, clip=None, page_no=0, sid=None, search=0.12):
     if g is None: raise SystemExit('FRAME_NOT_FOUND')
     sigs = load()
     sigs['samples'].append({'id': sid or Path(pdf).name, 'template': template, 'rotate_hint': rotate, 'search': search, 'G': _pack(g)})
-    json.dump(sigs, open(SIGS, 'w'), ensure_ascii=False)
+    json.dump(sigs, open(SIGS, 'w', encoding='utf-8'), ensure_ascii=False)
 
 
 if __name__ == '__main__':

@@ -38,13 +38,13 @@ def engine_draft(manifest, outdir, cache):
                        capture_output=True, text=True)
     tail = (e.stdout + e.stderr).strip().splitlines()
     au = outdir / 'draft-audit.json'
-    ok = au.exists() and json.loads(au.read_text())['pass']
+    ok = au.exists() and json.loads(au.read_text(encoding='utf-8'))['pass']
     return ok, (tail[-1][:400] if tail else '')
 
 
 def sheet(src_manifest, pdf, png, title):
     import pymupdf as fitz, auto_manifest as am
-    m = json.loads(Path(src_manifest).read_text())
+    m = json.loads(Path(src_manifest).read_text(encoding='utf-8'))
     d, p, rot = am.normalized(m['source']['path'])
     pg = fitz.open().new_page(width=1700, height=640)
     pg.show_pdf_page(fitz.Rect(5, 30, 845, 635), d, 0)
@@ -62,7 +62,7 @@ def draft_one(src, out, a, cache):
         subprocess.run([sys.executable, str(HERE / 'auto_manifest.py'), str(src), '--out', str(d), '--font', a.font,
                         '--font-index', str(a.font_index), '--assets', str(ASSETS), '--family', str(FAMILY), *extra],
                        capture_output=True, text=True)
-        rep = json.loads((d / 'auto-report.json').read_text()) if (d / 'auto-report.json').exists() else {'status': 'CRASH'}
+        rep = json.loads((d / 'auto-report.json').read_text(encoding='utf-8')) if (d / 'auto-report.json').exists() else {'status': 'CRASH'}
         rec = {'label': label, 'auto_status': rep.get('status'), 'reason': rep.get('reason'),
                'flags': rep.get('flags') or [], 'fields': rep.get('fields'), 'field_flags': rep.get('field_flags')}
         if rep.get('status') == 'MANIFEST_WRITTEN':
@@ -83,12 +83,12 @@ def draft_one(src, out, a, cache):
     flags = list(win['flags'])
     if line_integrity.split_lines(str(run_dir / 'manifest.json')): flags.append('LINE_SPLIT_ACROSS_GROUPS')
     if neighbor_check.narrow_displaced(str(run_dir / 'manifest.json')): flags.append('NEIGHBOR_DISPLACED')
-    fam = json.loads(FAMILY.read_text())
+    fam = json.loads(FAMILY.read_text(encoding='utf-8'))
     if text_crosscheck.check(None, str(run_dir / 'manifest.json'), str(run_dir / 'draft' / 'draft.pdf'), fam)['missing']:
         flags.append('TEXT_MISSING_IN_OUTPUT')
     review = sorted({f for f in flags if f.startswith(REVIEW_FLAGS)})
     subprocess.run([sys.executable, str(HERE / 'field_packet.py'), str(run_dir)], capture_output=True)
-    pk = json.loads((run_dir / 'field-packet' / 'packet.json').read_text())
+    pk = json.loads((run_dir / 'field-packet' / 'packet.json').read_text(encoding='utf-8'))
     tol = out / 'tolerance.json'
     if not tol.exists():
         tol.write_text(json.dumps({
@@ -98,7 +98,7 @@ def draft_one(src, out, a, cache):
             'text_layer_hint': pk.get('tolerance_rows_from_text_layer'),
             'size': pk['size'] if not str(pk['size']).startswith('READ_ME') else '',
             'linear_tolerances': [], 'angular_tolerances': [], 'additional_tolerance_conditions': []},
-            ensure_ascii=False, indent=1))
+            ensure_ascii=False, indent=1), encoding='utf-8')
     res.update(strategy=win['label'], flags=flags, review_flags=review, fields=win['fields'],
                triage='REVIEW' if review else 'AUTO_OK', seconds=round(time.perf_counter() - t0, 1))
     sheet(run_dir / 'manifest.json', run_dir / 'draft' / 'draft.pdf', out / 'review-sheet.png',
@@ -107,6 +107,8 @@ def draft_one(src, out, a, cache):
 
 
 def cmd_draft(a):
+    sys.path.insert(0, str(HERE.parent / 'engine')); import fonts as FT
+    a.font, a.font_index = FT.resolve(a.font, a.font_index)
     a.font = str(Path(a.font).expanduser().resolve())
     srcs = []
     for x in a.inputs:
@@ -120,7 +122,7 @@ def cmd_draft(a):
         used.add(name)
         r = draft_one(s.resolve(), root / name, a, root / '.cache'); r['dir'] = name; results.append(r)
         print(f"{r['triage']:9s} {r['seconds']:6.1f}s  {s.name}  {' '.join(r.get('review_flags', [])) or r.get('why') or ''}", flush=True)
-    (root / 'batch-results.json').write_text(json.dumps(results, ensure_ascii=False, indent=1))
+    (root / 'batch-results.json').write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding='utf-8')
     with open(root / 'batch-summary.csv', 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.writer(f); w.writerow(['原图', '分诊', '秒', '需看原因/例外原因', '图号', '品名'])
         for r in results:
@@ -132,11 +134,11 @@ def cmd_draft(a):
 
 def cmd_finish(a):
     root = Path(a.out_dir).expanduser().resolve()
-    results = json.loads((root / 'batch-results.json').read_text())
+    results = json.loads((root / 'batch-results.json').read_text(encoding='utf-8'))
     for r in results:
         if r['triage'] == 'EXCEPTION': continue
         d = root / r.get('dir', Path(r['source']).stem)
-        tol = json.loads((d / 'tolerance.json').read_text())
+        tol = json.loads((d / 'tolerance.json').read_text(encoding='utf-8'))
         if tol.get('status') != 'READ':
             print(f"WAIT      {d.name}  tolerance.json 未读"); continue
         fin = d / 'final'
@@ -145,20 +147,20 @@ def cmd_finish(a):
                             '--engine', str(ENGINE), '--reader', tol.get('reader', 'unrecorded'), '--out', str(fin)],
                            capture_output=True, text=True)
         au = fin / 'draft' / 'draft-audit.json'
-        ok = au.exists() and json.loads(au.read_text())['pass']
+        ok = au.exists() and json.loads(au.read_text(encoding='utf-8'))['pass']
         if ok:
             shutil.copy(fin / 'draft' / 'draft.pdf', d / f"{d.name}-康生草稿.pdf")
             sheet(fin / 'manifest-en.json', fin / 'draft' / 'draft.pdf', d / f"{d.name}-原图对照.png", d.name)
         r['final'] = 'OK' if ok else 'FAIL'
         print(f"{'FINAL_OK' if ok else 'FINAL_FAIL':9s} {d.name}  {'' if ok else (p.stdout + p.stderr)[-300:]}")
-    (root / 'batch-results.json').write_text(json.dumps(results, ensure_ascii=False, indent=1))
+    (root / 'batch-results.json').write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding='utf-8')
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest='cmd', required=True)
     p = sub.add_parser('draft'); p.add_argument('inputs', nargs='+'); p.add_argument('--out', required=True)
-    p.add_argument('--font', required=True); p.add_argument('--font-index', type=int, default=0)
+    p.add_argument('--font', help='标题字体；不传 = 自动找系统黑体（engine/fonts.py）'); p.add_argument('--font-index', type=int, default=0)
     p.set_defaults(func=cmd_draft)
     p = sub.add_parser('finish'); p.add_argument('out_dir'); p.set_defaults(func=cmd_finish)
     a = ap.parse_args(); a.func(a)

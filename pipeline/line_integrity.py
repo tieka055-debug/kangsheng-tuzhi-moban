@@ -5,7 +5,7 @@ import pymupdf as fitz
 sys.path.insert(0, __file__.rsplit('/', 1)[0]); import auto_manifest as am
 
 def split_lines(manifest):
-    m = json.load(open(manifest))
+    m = json.load(open(manifest, encoding='utf-8'))
     d, p, rot = am.normalized(m['source']['path'])
     groups = [(g['id'], [fitz.Rect(c) for c in g['clips']]) for g in m['groups']]
     def gid(r):

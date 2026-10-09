@@ -42,7 +42,7 @@ def load_source_fields(cfg, manifest_path):
     base = Path(manifest_path).resolve().parent
     evidence_path = resolve(base, ref['path'])
     require(sha(evidence_path) == ref['sha256'], 'ledger changed')
-    e = json.loads(evidence_path.read_text())
+    e = json.loads(evidence_path.read_text(encoding='utf-8'))
     require(semantic_digest(e) == ref.get('semantic_sha256'), 'semantic ledger digest differs')
     require(e.get('schema') == SCHEMA, 'unknown ledger schema')
     require(e.get('source_sha256') == cfg['source']['sha256'], 'ledger belongs to another source')
@@ -58,7 +58,7 @@ def load_source_fields(cfg, manifest_path):
     plan_dynamic_tolerance(schema)  # full ledger must fit, never truncate
     review_path = resolve(evidence_path.parent, e['review']['path'])
     require(sha(review_path) == e['review']['sha256'], 'independent field review changed')
-    review = json.loads(review_path.read_text())
+    review = json.loads(review_path.read_text(encoding='utf-8'))
     require(review.get('reviewer_identifier'), 'independent reviewer missing')
     rows = [r for r in review.get('rows', []) if r.get('source_sha256') == e['source_sha256']]
     require(len(rows) == 1, 'source must have exactly one independent field review')
@@ -150,25 +150,25 @@ def inspect_fields(args):
                   'extractable_text_only': p.get_text(clip=fitz.Rect(box)),
                   'status': 'SOURCE_FIELDS_REVIEW',
                   'warning': 'CAD curves are not included in extracted text. Review the entire rendered cell.'}
-    (out/'inspection.json').write_text(json.dumps(result, ensure_ascii=False, indent=2))
+    (out/'inspection.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps(result, ensure_ascii=False))
 
 def recheck_fields(args):
-    manifest = Path(args.manifest).resolve(); cfg = json.loads(manifest.read_text())
+    manifest = Path(args.manifest).resolve(); cfg = json.loads(manifest.read_text(encoding='utf-8'))
     evidence = load_source_fields(cfg, manifest)
     require(evidence, 'source_fields ledger required')
     with fitz.open(args.pdf) as doc:
         require(len(doc) == 1, 'single page output required')
         report = audit_source_fields(doc[0], evidence)
     report['output_sha256'] = sha(args.pdf)
-    Path(args.report).write_text(json.dumps(report, ensure_ascii=False, indent=2))
+    Path(args.report).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps(report, ensure_ascii=False))
     require(report['pass'], 'candidate is missing or changed source fields')
 
 def prepare_title_font(args):
     from fontTools import subset
     from fontTools.ttLib import TTFont
-    evidence=json.loads(Path(args.ledger).read_text())
+    evidence=json.loads(Path(args.ledger).read_text(encoding='utf-8'))
     text=''.join(evidence['fields'][k] for k in ('model','title'))
     font=TTFont(args.font,fontNumber=args.font_index)
     cmap=font.getBestCmap()

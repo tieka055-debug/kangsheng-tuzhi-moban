@@ -39,8 +39,8 @@ def main():
     ap.add_argument('run_dir', help='directory holding manifest.json + auto-report.json')
     a = ap.parse_args()
     d = Path(a.run_dir)
-    m = json.loads((d / 'manifest.json').read_text())
-    rep = json.loads((d / 'auto-report.json').read_text())
+    m = json.loads((d / 'manifest.json').read_text(encoding='utf-8'))
+    rep = json.loads((d / 'auto-report.json').read_text(encoding='utf-8'))
     doc, page, rot = am.normalized(m['source']['path'])
     out = d / 'field-packet'; out.mkdir(exist_ok=True)
     tol = next(g for g in m['groups'] if g['kind'] == 'tolerance')
@@ -60,7 +60,7 @@ def main():
         'tolerance_rows_from_text_layer': rows_from_words(tol_text),
         'field_flags': rep.get('field_flags', {}),
     }
-    (out / 'packet.json').write_text(json.dumps(packet, ensure_ascii=False, indent=1))
+    (out / 'packet.json').write_text(json.dumps(packet, ensure_ascii=False, indent=1), encoding='utf-8')
     print(out)
 
 

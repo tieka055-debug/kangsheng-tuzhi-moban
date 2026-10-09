@@ -6,3 +6,4 @@
 - 修改代码后先运行 `python -m unittest discover -s tests`，再在本机回归清单上重跑，确认没有退步。
 - 回填飞书用 `tools/feishu_backfill.py`，缺图备注用 `tools/feishu_note.py`；base/table/字段 ID 运行时传参。
 - 不上传原图、成品、业务数据。
+- 同事可能用 Mac 或 Windows、用不同的智能体：不要写死本机路径；字体不传时程序自动找系统黑体（`engine/fonts.py`）；读写文本一律 `encoding='utf-8'`。

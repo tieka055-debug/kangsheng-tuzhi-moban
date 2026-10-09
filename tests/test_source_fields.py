@@ -40,7 +40,7 @@ class SourceFieldsTest(unittest.TestCase):
                   'assets':{'font':'font.ttf'},'fields':fields,'groups':[{'id':'tol','kind':'tolerance','reviewed_source_extent':[580,489,660,547]}],
                   'source_fields':{'path':'fields.json','sha256':sha(self.root/'fields.json'),'semantic_sha256':semantic_digest(self.e)}}
     def write(self,name,value):
-        (self.root/name).write_text(json.dumps(value))
+        (self.root/name).write_text(json.dumps(value), encoding='utf-8')
     def load(self):
         return load_source_fields(self.cfg,self.root/'manifest.json')
     def reseal(self):

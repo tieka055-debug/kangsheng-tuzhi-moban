@@ -10,7 +10,7 @@ def union(cs):
     return r
 
 def displaced(manifest, near_pt=15.0, tol_pt=2.0):
-    m = json.load(open(manifest))
+    m = json.load(open(manifest, encoding='utf-8'))
     gs = [g for g in m['groups'] if g['kind'] in ('view', 'pcb', 'isometric', 'note') and abs(g['scale'] - 1) < 1e-6]
     out = []
     for i, a in enumerate(gs):
@@ -33,7 +33,7 @@ if __name__ == '__main__':
 
 def narrow_displaced(manifest, near=10.0, tol=2.0, narrow=40.0):
     """A narrow block (dimension group / caption) must stay put relative to the big block beside it."""
-    m = json.load(open(manifest))
+    m = json.load(open(manifest, encoding='utf-8'))
     gs = [g for g in m['groups'] if g['kind'] in ('view', 'pcb') and abs(g['scale'] - 1) < 1e-6]
     out = []
     for a in gs:

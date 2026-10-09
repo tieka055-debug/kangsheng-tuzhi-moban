@@ -108,7 +108,7 @@ def validate_transform(source_path, derived_path, ledger_path,
     require(derived_sha == expected_derived_sha256, 'derived PDF SHA256 differs from manifest')
     require(ledger_sha == expected_ledger_sha256, 'object ledger SHA256 differs from manifest')
 
-    ledger = json.loads(ledger_path.read_text())
+    ledger = json.loads(ledger_path.read_text(encoding='utf-8'))
     require(ledger.get('schema') == SCHEMA, 'unsupported evidence schema')
     require(ledger.get('kind') == 'watermark', 'only reviewed watermark exclusions are supported')
     require(ledger.get('status') == 'OBJECT_PRESERVATION_VERIFIED_NOT_INVENTORY_PASS',
@@ -195,7 +195,7 @@ def load_review(review_path, expected_source_sha256, expected_derived_sha256,
     require(review_path.is_file(), 'independent object-exclusion review is missing')
     review_sha = sha256(review_path)
     require(review_sha == expected_review_sha256, 'independent review SHA256 differs from manifest')
-    review = json.loads(review_path.read_text())
+    review = json.loads(review_path.read_text(encoding='utf-8'))
     require(review.get('schema') == REVIEW_SCHEMA, 'unsupported independent review schema')
     require(review.get('status') == REVIEW_STATUS,
             'object review must preserve the distinction from source inventory PASS')

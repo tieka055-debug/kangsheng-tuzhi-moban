@@ -30,8 +30,8 @@ def main():
     ap.add_argument('--out', required=True)
     a = ap.parse_args()
     d = Path(a.run_dir).resolve(); out = Path(a.out).resolve(); out.mkdir(parents=True, exist_ok=True)
-    m = json.loads((d / 'manifest.json').read_text())
-    tol = json.loads(Path(a.tolerance_json).read_text())
+    m = json.loads((d / 'manifest.json').read_text(encoding='utf-8'))
+    tol = json.loads(Path(a.tolerance_json).read_text(encoding='utf-8'))
     src = Path(m['source']['path']); rot = m['source']['rotation']
     doc = fitz.open(src); page = doc[0]; page.set_rotation(rot); page.remove_rotation()
     tg = next(g for g in m['groups'] if g['kind'] == 'tolerance')
@@ -51,7 +51,7 @@ def main():
               'rows': [{'row': 0, 'source_sha256': m['source']['sha256'], 'model': f['model'], 'title': f['title'],
                         'unit': f['unit'], 'field_review_status': 'PASS_VISUAL_FIELD_COMPARISON',
                         'tolerance_schema': schema}]}
-    (out / 'tolerance-read.json').write_text(json.dumps(review, ensure_ascii=False, indent=1))
+    (out / 'tolerance-read.json').write_text(json.dumps(review, ensure_ascii=False, indent=1), encoding='utf-8')
     ledger = {'schema': 'kangsheng-source-fields-v1', 'source_sha256': m['source']['sha256'], 'rotation': rot,
               'pymupdf': fitz.VersionBind, 'tolerance_schema': schema,
               'fields': {k: f[k] for k in ('model', 'title', 'unit', 'sheet', 'scale_text', 'size')},
@@ -59,7 +59,7 @@ def main():
                           'identity': {'box': ibox, 'raster_sha256': crop_hash(page, ibox)}},
               'identity_text_required': bool(page.get_text(clip=ib).strip()),
               'review': {'path': 'tolerance-read.json', 'sha256': sha(out / 'tolerance-read.json')}}
-    (out / 'ledger.json').write_text(json.dumps(ledger, ensure_ascii=False, indent=1))
+    (out / 'ledger.json').write_text(json.dumps(ledger, ensure_ascii=False, indent=1), encoding='utf-8')
     sys.path.insert(0, str(Path(a.engine).parent))
     from source_fields import semantic_digest
     m2 = json.loads(json.dumps(m))
@@ -69,14 +69,14 @@ def main():
     m2['fields'] = {**m2['fields'], 'size': f['size']}
     for k in ('background', 'brand_strip', 'font'):
         m2['assets'][k] = str((d / m['assets'][k]).resolve()) if not Path(m['assets'][k]).is_absolute() else m['assets'][k]
-    (out / 'manifest-en.json').write_text(json.dumps(m2, ensure_ascii=False, indent=1))
+    (out / 'manifest-en.json').write_text(json.dumps(m2, ensure_ascii=False, indent=1), encoding='utf-8')
     r = subprocess.run([sys.executable, str(Path(a.engine).resolve()), 'draft', str(out / 'manifest-en.json'), '--output', str(out / 'draft'),
                         '--control-root', str(out / 'control'), '--cache', str(out / '.cache')], capture_output=True, text=True)
     tail = (r.stdout + r.stderr).strip().splitlines()
     print(tail[-1] if tail else r.returncode)
     au = out / 'draft' / 'draft-audit.json'
     if au.exists():
-        A = json.loads(au.read_text()); t = A.get('approved_tolerance_reflow') or {}
+        A = json.loads(au.read_text(encoding='utf-8')); t = A.get('approved_tolerance_reflow') or {}
         print(json.dumps({'pass': A['pass'], 'tolerance_fields': t.get('status'), 'unplaced': A['source_unplaced_technical_ink_pixels']}))
 
 

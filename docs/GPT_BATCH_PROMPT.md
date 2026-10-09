@@ -5,16 +5,12 @@
 
 ---
 
-你在帮我把供应商的连接器图纸转成「康生」自己的图纸，并回填到飞书多维表格。仓库在 `/Users/vill/Documents/康生图纸模版/kangsheng-tuzhi-moban`，**先读 `docs/HANDOFF.md` 和 `SKILL.md`，严格按里面的流程和规则做**。
+你在帮我把供应商的连接器图纸转成「康生」自己的图纸，并回填到飞书多维表格。仓库 `kangsheng-tuzhi-moban`（GitHub tieka055-debug/kangsheng-tuzhi-moban，Mac/Windows 都能跑，安装见 README），**先读 `docs/HANDOFF.md` 和 `SKILL.md`，严格按里面的流程和规则做**。
 
 ## 环境（每次开新终端都要）
-```bash
-cd /Users/vill/Documents/康生图纸模版/kangsheng-tuzhi-moban
-export PATH=$HOME/gs-env/bin:$PATH          # Ghostscript，没有它带文字层的 PDF 出不了图
-git pull
-```
-仓库自带 `.venv` 缺依赖，请另建环境：`python3 -m venv ~/ks-venv && ~/ks-venv/bin/pip install -r requirements.txt`，然后用 `~/ks-venv/bin/python`。
-中文字体：`/System/Library/Fonts/STHeiti Medium.ttc`（加 `--font-index 0`）。
+进入仓库目录，先 `git pull`（拉不到最新代码就不要出图）。按 README「安装」建好 Python 环境和 Ghostscript（`gs -v` 或 Windows 的 `gswin64c -v` 能看到版本）。
+Windows 上先设 `$env:PYTHONUTF8=1`（PowerShell）。
+字体不用传：程序自动用系统黑体（Mac STHeiti、Windows SimHei），所有人出的图字体一致。
 
 ## 数据位置
 飞书多维表格 base `{BASE}`，表 `{TABLE}`（「全图纸」）。每条记录：
@@ -30,7 +26,7 @@ git pull
    - 结果 `OK`：用它给的模板和旋转（job 里 `"template":"auto"` 即可）。
    - 结果 `AMBIGUOUS` / `UNKNOWN_FRAME` / `NO_FRAME`：**不要硬做、不要套最像的模板**。把这条记入「待处理清单」（记录行号、型号、结果、最像的模板），进入下一条。
 3. 读公差：放大原图的公差格逐行照抄，**只抄本图自己的，不从别的型号抄**；原图写法照抄（含错别字）。档位名太长装不下就改短写（如 `0~5`），数值不变。
-4. 写 job.json 并运行 `python pipeline/cad_family.py job.json --out 输出目录 --font <字体>`。标题用图纸自己的品名（DC电源插座、电池连接器、USB连接器…），看不出来就写「连接器」并在汇报里标出来。
+4. 写 job.json 并运行 `python pipeline/cad_family.py job.json --out 输出目录`。标题用图纸自己的品名（DC电源插座、电池连接器、USB连接器…），看不出来就写「连接器」并在汇报里标出来。
 5. **看「原图对照.png」逐项核对**：视图/尺寸/说明/零件表都在；没有残留供应商标题栏、修订栏、公司名、水印；标注是蓝色、端子焊盘等重点是金色。有问题不要回填，记入「待处理清单」并写明现象。
 6. 合格的才回填：见下。
 

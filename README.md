@@ -1,16 +1,17 @@
 # kangsheng-tuzhi-moban
 
-把供应商的单页矢量 PDF 工程图批量转成**康生品牌图纸**。操作手册见 [SKILL.md](SKILL.md)，任何模型（Claude、Codex、Zcode 或低成本模型）都只需读这一份。
+把各家供应商的连接器工程图（矢量 PDF、cad2pdf、DWG）批量转成**康生公司统一的图纸模板**：康生图框和标题栏、康生配色（轮廓蓝、尺寸/端子金）、康生版式（尽量 Pin 表右上、说明接下面，视图放大），原图的技术内容按原矢量搬运、不重打。操作手册见 [SKILL.md](SKILL.md)，任何能读文件、跑命令的智能体（Claude Code、Codex 等）都只需读这一份；Mac 和 Windows 都能用。
 
 ## 流程
 
 ```
-原图.pdf ─▶ pipeline/auto_manifest.py   自动算出分块、裁切、排除区和排版（族配置里只有相对规则）
-         ─▶ engine/kangsheng.py draft   原矢量搬运，整页零遗漏门禁
-         ─▶ 分诊 AUTO_OK / REVIEW / EXCEPTION，并导出公差小图
-         ─▶ 读公差（几秒）─▶ pipeline/english_tolerance.py   英文公差栏，引擎重新跑全部门禁
-         ─▶ 康生草稿.pdf + 原图对照.png
+原图 ─▶ pipeline/frame_match.py   认供应商图框（已积累 46 个图框模板、362 个看过对照图的样本）
+     ─▶ 读公差（只读本图）写进 job.json
+     ─▶ pipeline/cad_family.py      去掉供应商图框/标题栏/RoHS/修订栏，原矢量搬进康生图框，重新排版、改色
+     ─▶ 康生图纸.pdf + 原图对照.png ─▶ 看对照图 ─▶ tools/feishu_backfill.py 回填飞书
 ```
+质源单页矢量 PDF 另有一条全自动门禁流程 `pipeline/run_batch.py`（draft → 读公差 → finish），见 SKILL.md 前半部分。
+认不出的图框不硬做：记进待处理清单，由维护人新建模板、登记样本后再做。
 
 ## 目录
 
@@ -18,7 +19,9 @@
 |---|---|
 | `engine/` | 出图引擎：矢量搬运、改色、门禁、标题栏、英文公差栏 |
 | `pipeline/` | 自动清单、批量入口、字段小图、英文公差，以及 3 个独立检测器 |
-| `families/` | 供应商族配置（目前只有质源 `zhiyuan.json`） |
+| `families/` | 图框模板 `cad_templates.json`、图框指纹样本 `cad_signatures.json`、质源族配置 `zhiyuan.json` |
+| `brands/` | 品牌配置（康生 / 润擎） |
+| `tools/` | 飞书回填与备注、回归测试、网格预览 |
 | `assets/` | 康生背景和品牌条 |
 | `tests/` | 单元测试 |
 
@@ -47,25 +50,26 @@ cd kangsheng-tuzhi-moban
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 brew install ghostscript          # 没有 Homebrew 也可以用 conda/micromamba 装到用户目录
 ```
-字体：`--font "/System/Library/Fonts/STHeiti Medium.ttc" --font-index 0`
+字体不用传：程序自动用 `/System/Library/Fonts/STHeiti Medium.ttc`（见 `engine/fonts.py`）。
 
 ### Windows（PowerShell）
 
 1. 安装 Python（python.org，安装时勾选 **Add python.exe to PATH**）、Git（git-scm.com）、Ghostscript 64 位（ghostscript.com 下载 `gs…w64.exe`）。
-2. 把 Ghostscript 的 `bin` 目录加入 PATH（例如 `C:\Program Files\gs\gs10.04.0\bin`），新开 PowerShell 运行 `gswin64c -v` 能看到版本即可。程序会自动找 `gs` / `gswin64c` / `gswin32c`。
-3. 安装本仓库：
+2. 设置 `PYTHONUTF8=1`（系统环境变量，或每次在 PowerShell 里 `$env:PYTHONUTF8=1`），避免中文路径和输出乱码。
+3. 把 Ghostscript 的 `bin` 目录加入 PATH（例如 `C:\Program Files\gs\gs10.04.0\bin`），新开 PowerShell 运行 `gswin64c -v` 能看到版本即可。程序会自动找 `gs` / `gswin64c` / `gswin32c`。
+4. 安装本仓库：
    ```powershell
    git clone https://github.com/tieka055-debug/kangsheng-tuzhi-moban.git
    cd kangsheng-tuzhi-moban
    py -m venv .venv
    .venv\Scripts\pip install -r requirements.txt
    ```
-4. 出图（字体用系统自带的黑体或微软雅黑）：
+5. 出图（字体不用传，自动用系统黑体 `C:\Windows\Fonts\simhei.ttf`）：
    ```powershell
-   .venv\Scripts\python pipeline\cad_family.py job.json --out 输出目录 --font C:\Windows\Fonts\simhei.ttf
+   .venv\Scripts\python pipeline\cad_family.py job.json --out 输出目录
    ```
-   用 `msyh.ttc`（微软雅黑）时加 `--font-index 0`。
+   回填飞书需要 `lark-cli`（npm 安装的 `lark-cli.cmd` 也能自动找到）。
 
 ### 给其他智能体用
 
-能读写本地文件、能运行命令的智能体（Claude Code、Codex 等）：让它先读 `SKILL.md`、`docs/HANDOFF.md`；批量回填飞书照 `docs/GPT_BATCH_PROMPT.md`。只能聊天、不能运行命令的网页版智能体跑不了。
+能读写本地文件、能运行命令的智能体（Claude Code、Codex 等）：仓库根目录的 `AGENTS.md`（Codex 等读）和 `CLAUDE.md`（Claude Code 读）会自动把它带到 `SKILL.md`；批量回填飞书照 `docs/GPT_BATCH_PROMPT.md`。只能聊天、不能运行命令的网页版智能体跑不了。

@@ -10,7 +10,7 @@ BRANDS = ('kangsheng', 'runqing')
 def load(name='kangsheng'):
     if name not in BRANDS:
         raise SystemExit(f'未知品牌 {name!r}，可选：{", ".join(BRANDS)}')
-    cfg = json.loads((ROOT / 'brands' / f'{name}.json').read_text())
+    cfg = json.loads((ROOT / 'brands' / f'{name}.json').read_text(encoding='utf-8'))
     b = dict(cfg)
     b['blue'] = tuple(v / 255 for v in cfg['blue_rgb255'])
     b['gold'] = tuple(v / 255 for v in cfg['gold_rgb255'])

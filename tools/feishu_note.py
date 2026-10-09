@@ -7,8 +7,10 @@ notes.json：[{"record_id": "...", "note": "缺原图：……"}, ...]
 - 原有备注一个字都不改，新说明接在后面（另起一行），并带前缀（默认「【康生图纸】」；润擎用 --tag 【润擎图纸】）。
 - 已经有同一前缀说明的记录跳过，可重复运行（康生和润擎的说明互不影响）。
 - 先对第一条做 --dry-run 确认命令格式，再逐条写入；写完重新导出，核对备注和其他字段。"""
-import argparse, json, subprocess, sys
+import argparse, json, shutil, subprocess, sys
 from pathlib import Path
+
+LARK = shutil.which('lark-cli') or 'lark-cli'   # Windows installs it as lark-cli.cmd, which a bare name does not find
 
 TAG = '【康生图纸】'   # 默认前缀；润擎传 --tag 【润擎图纸】
 
@@ -23,14 +25,14 @@ def main():
     workdir = Path(a.notes).resolve().parent
 
     def run(*x):
-        return subprocess.run(['lark-cli', 'base', *x], capture_output=True, text=True, cwd=workdir)
+        return subprocess.run([LARK, 'base', *x], capture_output=True, text=True, encoding='utf-8', cwd=workdir)
 
     def export(name):
         run('+record-list', '--base-token', B, '--table-id', T, '--as', 'user', '--format', 'ndjson', '--output', name, '--overwrite')
-        return {r['record_id']: r for r in map(json.loads, filter(str.strip, open(workdir / name)))}
+        return {r['record_id']: r for r in map(json.loads, filter(str.strip, open(workdir / name, encoding='utf-8')))}
 
     helptext = run('+record-upsert', '--help').stdout
-    (workdir / 'record-upsert-help.txt').write_text(helptext)
+    (workdir / 'record-upsert-help.txt').write_text(helptext, encoding='utf-8')
     import re
     flags = set(re.findall(r'(--[a-z][a-z-]*) string', helptext))   # flags that take a value
     flag = next((f for f in ('--json', '--fields', '--data') if f in flags), None)
@@ -38,7 +40,7 @@ def main():
         print('lark-cli 的 +record-upsert 参数和预期不同，未写入任何内容。请把 record-upsert-help.txt 发给我。'); sys.exit(1)
 
     before = export('notes-before.ndjson')
-    items = json.load(open(a.notes)); todo = []
+    items = json.load(open(a.notes, encoding='utf-8')); todo = []
     for it in items:
         r = before.get(it['record_id'])
         if r is None: print('记录不存在，跳过', it['record_id']); continue
