@@ -146,6 +146,138 @@ def _fix_encoding(o):
     return o
 
 
+WATERMARK_TEXT = '康生电子 KANGSHENG'
+
+
+def _watermark(pg, font, colour, avoid):
+    """Faint diagonal company name tiled over the drawing area (user 2026-10-09): a sheet taken away and re-framed still
+    reads Kangsheng across its views. A deterrent, not a lock -- a vector editor can still delete it."""
+    pg.insert_font(fontname='ks-wm', fontfile=str(font))
+    f = fitz.Font(fontfile=str(font)); size = 16
+    tl = f.text_length(WATERMARK_TEXT, fontsize=size)
+    area = fitz.Rect(KF.FRAME); area = fitz.Rect(area.x0 + 4, area.y0 + 4, area.x1 - 4, area.y1 - 4)
+    stepx, stepy = tl + 30, 62
+    row = 0; y = area.y0 + 20
+    while y < area.y1 + tl:
+        x = area.x0 - stepx + (row % 2) * stepx / 2
+        while x < area.x1:
+            p0 = fitz.Point(x, y)
+            corners = [fitz.Point(0, 0), fitz.Point(tl, 0), fitz.Point(0, -size), fitz.Point(tl, -size)]
+            corners = [p0 + c_ * fitz.Matrix(-25) for c_ in corners]   # same rotation as the morph below
+            bb = fitz.Rect(min(c_.x for c_ in corners), min(c_.y for c_ in corners), max(c_.x for c_ in corners), max(c_.y for c_ in corners))
+            if not area.contains(bb) or bb.intersects(avoid):
+                x += stepx; continue
+            pg.insert_text(p0, WATERMARK_TEXT, fontname='ks-wm', fontsize=size, color=colour, fill_opacity=0.06,
+                           morph=(p0, fitz.Matrix(-25)))
+            x += stepx
+        y += stepy; row += 1
+
+
+def _house_layout(views, keep, rects, cb, area, reserved, s_plain):
+    """Kangsheng house layout (user 2026-10-09: the sheet must not look like the supplier's, but projection stays
+    standard): the 3D view is cut out and moved to the free corner left of the title block (packed last); all other
+    views keep their arrangement and move as one unit. One scale for all; each part keeps its own dimensions.
+    Returns {'scale', 'mats': [(unit, Matrix)]} or None when nothing would move or the views would shrink (below 97%)."""
+    def box(idx):
+        r = fitz.Rect()
+        for i in idx: r |= rects[i]
+        return r
+    def iso(idx):
+        # a 3D view: many long slanted lines running in several directions; section hatching is slanted too but
+        # runs in one or two directions only
+        n = 0; bins = collections.Counter()
+        for i in idx:
+            for it in keep[i]['items']:
+                if it[0] != 'l': continue
+                dx, dy = it[2].x - it[1].x, it[2].y - it[1].y
+                if max(abs(dx), abs(dy)) < 0.012 * cb.width: continue   # glyph strokes of dimension text are slanted too
+                n += 1
+                if min(abs(dx), abs(dy)) > 0.15 * max(abs(dx), abs(dy)):
+                    bins[int(math.degrees(math.atan2(dy, dx)) % 180 // 10)] += 1
+        sl = sum(bins.values())
+        return n > 12 and sl > 0.4 * n and sum(1 for v in bins.values() if v >= 0.08 * sl) >= 3
+    # 1. a 3D view that clustered into a neighbouring view block is cut out of it (connected pieces, small gap)
+    blocks = []
+    gap = 0.004 * cb.width
+    for b_ in views:
+        idx = list(b_['idx'])
+        cell = max(gap, 1.0); grid = collections.defaultdict(list); par = {i: i for i in idx}
+        def find(a):
+            while par[a] != a: par[a] = par[par[a]]; a = par[a]
+            return a
+        for i in idx:
+            r = rects[i]
+            for gx in range(int((r.x0 - gap) // cell), int((r.x1 + gap) // cell) + 1):
+                for gy in range(int((r.y0 - gap) // cell), int((r.y1 + gap) // cell) + 1):
+                    for j in grid[(gx, gy)]:
+                        rj = rects[j]
+                        if r.x0 - gap <= rj.x1 and rj.x0 <= r.x1 + gap and r.y0 - gap <= rj.y1 and rj.y0 <= r.y1 + gap:
+                            par[find(i)] = find(j)
+                    grid[(gx, gy)].append(i)
+        comps = collections.defaultdict(list)
+        for i in idx: comps[find(i)].append(i)
+        whole = box(idx); A = max(1e-6, whole.width * whole.height)
+        isos = [c for c in comps.values() if len(c) > 5 and iso(c) and box(c).width * box(c).height > 0.04 * A]
+        if isos and len(isos) < len(comps):
+            rest = [i for i in idx if not any(i in c for c in isos)]
+            for c in isos: blocks.append({'idx': c, 'r': box(c), 'iso': True})
+            blocks.append({'idx': rest, 'r': box(rest), 'iso': iso(rest)})
+        else:
+            blocks.append({'idx': idx, 'r': box(idx), 'iso': iso(idx)})
+    # 2. everything that is not a 3D view keeps its arrangement and moves as one unit: re-packing the other blocks
+    # separately can tear a drawing from its own dimensions (seen: a PCB layout's pads split from its outline/DIM labels)
+    units = {'rest': {'idx': [], 'r': fitz.Rect(), 'iso': False}}
+    for k, b_ in enumerate(blocks):
+        if b_['iso']: units[k] = dict(b_)
+        else: units['rest']['idx'] += b_['idx']; units['rest']['r'] |= b_['r']
+    if not units['rest']['idx']: del units['rest']
+    groups = list(units.values())
+    if os.environ.get('CAD_DEBUG'): print('HOUSE units', [([round(v) for v in g['r']], g['iso']) for g in groups], file=sys.stderr)
+    if len(groups) < 2: return None
+    def iso(g): return g['iso'] if isinstance(g, dict) else False
+    order = sorted(groups, key=lambda g: (iso(g), -g['r'].width * g['r'].height))
+    gap = 12.0
+    K = fitz.Rect(reserved.x0 - 8, reserved.y0 - 8, reserved.x1, reserved.y1)
+    def pack(sc):
+        rows, cur, y, x = [], [], area.y0, area.x0
+        rh = 0
+        for g in order:
+            w, h = g['r'].width * sc, g['r'].height * sc
+            while True:
+                xmax = K.x0 if (y + max(rh, h) > K.y0) else area.x1
+                if not cur or x + w <= xmax: break
+                rows.append((y, rh, cur)); y += rh + gap; cur, x, rh = [], area.x0, 0
+            if x + w > (K.x0 if y + h > K.y0 else area.x1) or y + h > area.y1: return None
+            cur.append((g, x, w, h)); x += w + gap; rh = max(rh, h)
+        rows.append((y, rh, cur))
+        return rows
+    lo, hi = 0.2 * s_plain, 3.0 * s_plain
+    best = None
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        r = pack(mid)
+        if r: best, lo = (mid, r), mid
+        else: hi = mid
+    if os.environ.get('CAD_DEBUG'): print('HOUSE best', best and best[0], 's_plain', s_plain, file=sys.stderr)
+    if not best or best[0] < 0.97 * s_plain: return None   # views first: never trade view size for the new arrangement
+    sc, rows = best
+    # spread: rows share the spare height, items in a row share the spare width (centred in their row band)
+    used = sum(rh for _, rh, _ in rows) + gap * (len(rows) - 1)
+    vgap = gap + max(0, area.height - used) / (len(rows) + 1)
+    mats_ = []; y = area.y0 + max(0, area.height - used) / (len(rows) + 1)
+    for _, rh, items in rows:
+        xmax = K.x0 if y + rh > K.y0 else area.x1
+        wsum = sum(w for _, _, w, _ in items)
+        hg = max(gap, (xmax - area.x0 - wsum) / (len(items) + 1))
+        x = area.x0 + hg
+        for g, _, w, h in items:
+            yy = y + (rh - h) / 2
+            mats_.append((g, fitz.Matrix(sc, 0, 0, sc, x - g['r'].x0 * sc, yy - g['r'].y0 * sc)))
+            x += w + hg
+        y += rh + vgap
+    return {'scale': sc, 'mats': mats_, 'order': [len(o['idx']) for o in order]}
+
+
 def run(job, out, font, font_index=0, brand='kangsheng'):
     if 'tolerance' in job: job = dict(job, tolerance=_fix_encoding(job['tolerance']))
     B = BR.load(brand)   # 品牌配置（默认康生，值与原先写死的完全一致）
@@ -762,6 +894,14 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     s, m = placed
     for b_ in views:
         for i in b_['idx']: mats[i] = (m, s)
+    house = None
+    # Kangsheng default (user 2026-10-09): house layout; a job/template 'layout' value ('plain', 'sheet') overrides
+    if (job.get('layout') or tpl.get('layout') or ('house' if brand == 'kangsheng' else None)) == 'house' and len(views) > 1:
+        house = _house_layout(views, keep, rects, cb, area, RESERVED, s)
+        if house:
+            s = house['scale']
+            for g_, mg in house['mats']:
+                for i in g_['idx']: mats[i] = (mg, s)
     if slot:
         sb = fitz.Rect()
         for b_ in slot: sb |= b_['r']
@@ -851,7 +991,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     ff = Path(font)
     if font_index or ff.suffix.lower() in ('.ttc', '.otc', '.otf'):
         sys.path.insert(0, str(HERE)); import auto_manifest as am
-        text = job['title'] + job['model'] + B.get('font_extra_text', '')
+        text = job['title'] + job['model'] + B.get('font_extra_text', '') + WATERMARK_TEXT
         ttf = Path(out) / 'title-font.ttf'; Path(out).mkdir(parents=True, exist_ok=True)
         from fontTools.ttLib import TTFont
         from fontTools import subset
@@ -868,6 +1008,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         KF.draw_frame_and_title(pg, fields, {'font': font, 'brand_strip': str(ROOT / 'assets' / 'brand-strip.png')},
                                 tolerance_mode='source')
         DT.render_dynamic_tolerance(pg, job['tolerance'], KF.TOLERANCE_BOX)
+        if job.get('watermark'): _watermark(pg, font, BLUE, RESERVED)   # off by default (user 2026-10-09: not now)
     out = Path(out); out.mkdir(parents=True, exist_ok=True)
     pdf = out / f"{job['model'].replace('/', '_')}-{B['output_suffix']}.pdf"
     doc.save(pdf, garbage=3, deflate=True)
