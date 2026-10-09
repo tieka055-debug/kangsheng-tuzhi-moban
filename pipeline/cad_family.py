@@ -569,6 +569,15 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         top_tables = []
         for b_ in [q for q in slot if n_rules(q) >= 3]:
             slot.remove(b_); top_tables.append(b_)
+        if top_tables and (tpl.get('rail_notes_only') or job.get('rail_notes_only')):
+            # the right column then carries only the table and the text notes; drawings that sat on the right
+            # (PCB layout, 3D view, captions) go back to the views so the column stays clean and the views get the room
+            def is_notes(b_):
+                sz = [max(rects[i].width, rects[i].height) for i in b_['idx']]
+                return (sum(1 for z in sz if z < 0.02 * cb.width) >= 0.95 * len(sz)
+                        and b_['r'].height >= 0.12 * cb.height)
+            back = [b_ for b_ in rail if not is_notes(b_)]
+            rail = [b_ for b_ in rail if b_ not in back]; views = views + back
     mats = {}
     RAIL = fitz.Rect(B['rail'].x0, B['rail'].y0, B['rail'].x1 - tpl.get('rail_margin', 0), B['rail'].y1)
     if rail:
@@ -591,8 +600,22 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             tb = fitz.Rect()
             for b_ in top_tables: tb |= b_['r']
             gap = 8.0
-            sc = min(rw / max(tb.width, rb.width), RAIL.height / (tb.height + gap + rb.height))
+            w_col = rb.width * min(rw / rb.width, RAIL.height / rb.height, (tpl.get('rail_cap') or 9) * uni)   # the notes column's own width
+            sc = min(rw / max(tb.width, rb.width), RAIL.height / (tb.height + gap + rb.height),
+                     w_col / max(tb.width, rb.width))   # adding the table on top must not widen the column (views keep their room)
             if tpl.get('rail_cap'): sc = min(sc, tpl['rail_cap'] * uni)
+            # balance: the column's text no bigger than the drawing itself, so the views get the width they need
+            vb_ = fitz.Rect()
+            for b_ in views: vb_ |= b_['r']
+            va = B['views_area']
+            def view_scale(s_):
+                x0_ = RAIL.x1 - max(tb.width, rb.width) * s_ - 10
+                return min((x0_ - va.x0) / max(vb_.width, 1), (va.y1 - va.y0) / max(vb_.height, 1))
+            s0 = sc
+            for k in range(60):
+                s_ = s0 * (1 - k * 0.015)
+                sc = s_
+                if s_ <= view_scale(s_): break
             xt = RAIL.x1 - tb.width * sc
             mt = fitz.Matrix(sc, 0, 0, sc, xt - tb.x0 * sc, RAIL.y0 - tb.y0 * sc)
             for b_ in top_tables:

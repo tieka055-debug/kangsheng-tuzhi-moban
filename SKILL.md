@@ -213,7 +213,7 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 | `CEN_cenlink` | 欣訊(CEN LINK)图框：右上 REV/DESCRIPTION/ECN/DATE/DRAWER 修订栏（可达 3 行，取到 0.092），右下 CEN logo+标题栏；Notes（含订购编号图）保留 |
 | `DT_dingte` | 鼎特(Dingte)图框：整页外框，右上小修订栏，右下标题栏；四边 Autodesk 水印用边缘窄带去掉（水印是文字轮廓，没有专门的水印逻辑） |
 
-**模板开关（写在模板里，只对该图框生效）：** `bottom_slot`、`table_band_top`、`frame_pad`、`rail_cap`（右栏字不超过图的放大倍数×该值）、`join_line_pieces`、`split_paths`、`rail_stack`、`line_extent_fix`、`width_cap`（输出线宽上限）、`layout: "sheet"`（保持整页布局，不拉右栏）、`fit_search`（在标题栏外找最大可放缩放；不写时若普通缩放放不下会自动启用）、`frame_bottom`（模板也可写，job 里的优先；自动判图框时只能靠模板），`pin_table_top`（原图把 Pin/尺寸表画在底部时，把它放到右栏最上面、右栏原有内容（性能说明等）整体接在它下面——康生固定布局；job 也可写），`rail_pull`（[[x0,y0,x1,y1],…]：这些区域的东西拉到右栏最上面，例如 PIN 表）、`rail_margin`、`frame_search`（内框搜索带，默认 0.12；大字写在框外的图用 0.3）。
+**模板开关（写在模板里，只对该图框生效）：** `bottom_slot`、`table_band_top`、`frame_pad`、`rail_cap`（右栏字不超过图的放大倍数×该值）、`join_line_pieces`、`split_paths`、`rail_stack`、`line_extent_fix`、`width_cap`（输出线宽上限）、`layout: "sheet"`（保持整页布局，不拉右栏）、`fit_search`（在标题栏外找最大可放缩放；不写时若普通缩放放不下会自动启用）、`frame_bottom`（模板也可写，job 里的优先；自动判图框时只能靠模板），`pin_table_top`（原图把 Pin/尺寸表画在底部时，把它放到右栏最上面、右栏原有内容接在下面；配合 `rail_notes_only` 让右栏只放表和文字说明、PCB 等图回视图区。会让视图缩小约 15%，默认不开，用户要「Pin 表在右上」时在 job 里打开），`rail_pull`（[[x0,y0,x1,y1],…]：这些区域的东西拉到右栏最上面，例如 PIN 表）、`rail_margin`、`frame_search`（内框搜索带，默认 0.12；大字写在框外的图用 0.3）。
 
 **表格贴着供应商图框边**：零件表/Pin 表画到图框左右边时，原图常拿图框线当表格外边框，去框后会缺边。程序会在「三条以上同起点的表格横线都止于图框左右边」时补回这段边线（report 里 `table_side_restored`，2026-10-03 起，两个品牌都生效）。看对照图时仍要核对表格四边完整。
 
@@ -224,7 +224,7 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 ### 处理原则
 
 - 颜色：黑/灰/绿和主标注色 → 康生蓝；其他彩色（端子、焊盘）→ 康生金。
-- 排版：视图保持原图相对位置，整体等比放大；右侧说明/尺寸表/材料表放右栏（最宽到 x=524）。**固定规则：右上角放 Pin 数尺寸表，紧接着下面放性能参数/说明**（模板开关 `rail_stack`；原图里表和说明左右并排时必须打开）。
+- 排版：视图保持原图相对位置，整体等比放大；右侧说明/尺寸表/材料表放右栏（最宽到 x=524）。**尽量**右上角放 Pin 数尺寸表、下面接性能参数/说明（用户 2026-10-09 澄清：这是倾向不是硬规则，整体好看、视图够大优先，目的是版面不要和供应商一模一样）（模板开关 `rail_stack`；原图里表和说明左右并排时必须打开）。
 - 原图写错的（尺寸表删除线、数量和 Pin 数不符等）照原样保留，报给人核对，不自行改。
 - DWG 转换后某张图的文字/表格缺失（和同系列其他张对比能看出），这张不出图，备注「原图损坏，请供应商重发」。**不从别的型号抄。**
 - 图框判别库 `families/cad_signatures.json`：每个已验证图框存一个 3200 位的指纹。只登记看过对照图确认合格的图；不合格的图框保持「对不上」，不要登记。
