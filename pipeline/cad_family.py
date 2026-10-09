@@ -325,7 +325,10 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
                 vs = [(it[1].x, it[1].y, it[2].y) for d in keep for it in d['items'] if it[0] == 'l' and abs(it[1].x - it[2].x) < 0.3]
                 vs += [(xx, q.y0, q.y1) for d in keep for it in d['items'] if it[0] in ('re', 'qu')
                        for q in [it[1] if it[0] == 're' else it[1].rect] for xx in (q.x0, q.x1)]   # rectangle edges are borders too
-                cov = sum(max(0, min(y1_, max(a, b)) - max(y0_, min(a, b))) for x, a, b in vs if abs(x - x_) < 0.6)
+                segs = sorted((max(y0_, min(a, b)), min(y1_, max(a, b))) for x, a, b in vs if abs(x - x_) < 0.6)
+                cov, end_ = 0.0, y0_   # union length: a border drawn twice (overlapping pieces) must not count double
+                for a, b in segs:
+                    if b > end_: cov += b - max(a, end_); end_ = b
                 if cov >= 0.95 * (y1_ - y0_): continue
                 src_ = c_[0][3]
                 keep.append({'items': [('l', fitz.Point(x_, y0_), fitz.Point(x_, y1_))], 'type': 's', 'color': src_.get('color'),
@@ -638,19 +641,12 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             def is_table(b_):
                 return sum(1 for i in b_['idx'] for it in keep[i]['items'] if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3
                            and abs(it[1].x - it[2].x) > 0.6 * b_['r'].width) >= 4
-            # a sliver of a view (e.g. the tip of a 3D view) that fell right of the split goes back with its view,
-            # otherwise stacking drops it on its own into the column
-            back = [b_ for b_ in rail if not any(i in pullset for i in b_['idx']) and not is_table(b_)
-                    and b_['r'].width * b_['r'].height < 0.01 * cb.width * cb.height
-                    and any(fitz.Rect(v['r'].x0 - 2, v['r'].y0 - 2, v['r'].x1 + 2, v['r'].y1 + 2).intersects(b_['r']) for v in views)]
-            if os.environ.get('CAD_DEBUG'): print('RAILB', [[round(v,1) for v in b_['r']] for b_ in rail], 'VIEWS', [[round(v,1) for v in b_['r']] for b_ in views], cb, file=sys.stderr)
-            if back:
-                rail = [b_ for b_ in rail if b_ not in back]; views = views + back
-                rb = fitz.Rect()
-                for b_ in rail: rb |= b_['r']
             rbp = fitz.Rect(rb.x0 - 1, rb.y0 - 1, rb.x1 + 1, rb.y1 + 1)
+            # only inside the tables' own boxes: the column's box also spans its drawings, and a sliver of a view
+            # (e.g. the tip of a 3D view) inside that box would otherwise be torn off into the column
+            tbs = [fitz.Rect(q['r'].x0 - 1, q['r'].y0 - 1, q['r'].x1 + 1, q['r'].y1 + 1) for q in rail if is_table(q)] or [rbp]
             for b_ in views:   # pieces of the table (grid lines) that were merged into a view block travel with the rail
-                mv = [i for i in b_['idx'] if rbp.contains(rects[i])]
+                mv = [i for i in b_['idx'] if any(t_.contains(rects[i]) for t_ in tbs)]
                 if mv:
                     b_['idx'] = [i for i in b_['idx'] if i not in mv]
                     rail.append({'idx': mv, 'r': fitz.Rect(min(rects[i].x0 for i in mv), min(rects[i].y0 for i in mv),
@@ -690,7 +686,14 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             rules = sum(1 for i in b_['idx'] for it in keep[i]['items'] if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3
                         and abs(it[1].x - it[2].x) > 0.6 * b_['r'].width)
             return rules >= 4 or sum(1 for z in sz if z < 0.02 * cb.width) >= 0.95 * len(sz)
-        rail_ids = {i for b_ in rail if _texty(b_) for i in b_['idx']}
+        units_ = []   # overlapping blocks (a table's grid, its text, its restored border) are judged together
+        for b_ in rail:
+            hit = [u for u in units_ if fitz.Rect(u['r'].x0 - 1, u['r'].y0 - 1, u['r'].x1 + 1, u['r'].y1 + 1).intersects(b_['r'])
+                   or fitz.Rect(b_['r'].x0 - 1, b_['r'].y0 - 1, b_['r'].x1 + 1, b_['r'].y1 + 1).intersects(u['r'])]
+            u = {'idx': list(b_['idx']), 'r': fitz.Rect(b_['r'])}
+            for h in hit: u['idx'] += h['idx']; u['r'] |= h['r']; units_.remove(h)
+            units_.append(u)
+        rail_ids = {i for u in units_ if _texty(u) for i in u['idx']}
     else:
         rail_x0 = B['views_area'].x1
     if top_tables and not any(i in mats for b_ in top_tables for i in b_['idx']):
