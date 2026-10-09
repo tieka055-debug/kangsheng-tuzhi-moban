@@ -999,8 +999,29 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     sh = pg.new_shape()
     off_sheet = 0   # source ink placed outside the Kangsheng frame (a block placed off the page would silently lose content)
     FR_ = fitz.Rect(FRAME.x0 - 1, FRAME.y0 - 1, FRAME.x1 + 1, FRAME.y1 + 1)
+    # white masks behind dimension text (white fill, white or no stroke) only hide lines on white paper: drawn in
+    # Kangsheng blue they become solid bars over the numbers. Black-background DWG exports draw content in white: keep.
+    _wh = lambda c: c is not None and min(c) >= 0.95
+    dark_bg = any(d.get('fill') is not None and max(d['fill']) < 0.25 and d['rect'].width * d['rect'].height > 0.4 * page.rect.width * page.rect.height
+                  for d in D)
+    def _is_box(d):   # a plain quadrilateral (a 're' item, or straight segments joining four vertices)
+        its = d['items']
+        if len(its) == 1 and its[0][0] == 're': return True
+        if not (3 <= len(its) <= 8 and all(it[0] == 'l' for it in its)): return False
+        pts = []   # four distinct vertices: a box in any orientation (also one drawn as two triangles)
+        for it in its:
+            for q in it[1:3]:
+                if not any(abs(q.x - u.x) < 0.05 and abs(q.y - u.y) < 0.05 for u in pts): pts.append(q)
+        return len(pts) == 4
+    cand = [] if dark_bg else [n_ for n_, d in enumerate(keep) if _wh(d.get('fill')) and (d.get('color') is None or _wh(d.get('color')))
+                               and _is_box(d) and d['rect'].width > 1 and d['rect'].height > 1]
+    masks = set()
+    for n_ in cand:   # ...and other ink (the dimension text) is drawn inside it afterwards
+        R = fitz.Rect(keep[n_]['rect']); R = fitz.Rect(R.x0 - 0.2, R.y0 - 0.2, R.x1 + 0.2, R.y1 + 0.2)
+        inside = sum(1 for k in range(n_ + 1, min(len(keep), n_ + 80)) if R.contains(keep[k]['rect']) and not _wh(keep[k].get('color') or keep[k].get('fill')))
+        if inside >= 2: masks.add(n_)
     for n_, d in enumerate(keep):
-        if n_ not in mats: continue
+        if n_ not in mats or n_ in masks: continue
         m, s = mats[n_]
         if any(not FR_.contains(q * m) for it in d['items'] for q in (it[1:] if it[0] in ('l', 'c') else
                ([it[1].tl, it[1].br] if it[0] == 're' else [it[1].ul, it[1].lr] if it[0] == 'qu' else []))):
@@ -1058,7 +1079,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
     doc.save(pdf, garbage=3, deflate=True)
     rep = {'source': job['source'], 'inner_frame': list(I), 'supplier_furniture_rects': [list(r) for r in furn],
            'paths_total': len(D), 'paths_placed': len(keep), 'dropped': dict(dropped),
-           'colour_rule': colour_rule, 'dominant_colour_to_blue': dominant, 'other_colours_to_gold': [k for k in cnt if k != dominant],
+           'colour_rule': colour_rule, **({'white_masks_dropped': len(masks & set(mats))} if masks & set(mats) else {}), 'dominant_colour_to_blue': dominant, 'other_colours_to_gold': [k for k in cnt if k != dominant],
            'scale': round(s, 4), 'rail_used_top_table': bool(top_tables) and any(i in mats for b_ in top_tables for i in b_['idx']),
            'rail_blocks': len(rail), 'rail_stacked': rail_stacked, 'output': str(pdf), 'auto_match': auto,
            **({'images_placed': images_placed} if images_placed else {}),

@@ -1212,6 +1212,36 @@
    "frame_bottom": "inner_ring",
    "width_cap": 1.2,
    "line_extent_fix": true
+  },
+  "MJX_rohs": {
+   "desc": "美金兴(MJX)图框：数字 1…9/字母 A…F 外框，左上 RoHS Compliant，右上 REV/LOCAS/DESCRIPTION 修订栏，底部整条标题栏（公司名+GENERAL TOLERANCE+DESIGN/DWG NO/TITLE），标题栏右上方的空 BOM 表(序号/材料/材质/料号/用量/备注)一并去掉；尺寸数字下的白色遮挡框程序自动不画",
+   "furniture_frac": [
+    [
+     0.0,
+     0.0,
+     0.2,
+     0.05
+    ],
+    [
+     0.675,
+     0.0,
+     1.0,
+     0.062
+    ],
+    [
+     0.6,
+     0.797,
+     1.0,
+     1.0
+    ],
+    [
+     0.0,
+     0.887,
+     1.0,
+     1.0
+    ]
+   ],
+   "fit_search": true
   }
  }
 }
