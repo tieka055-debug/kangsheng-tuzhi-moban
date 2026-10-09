@@ -1098,9 +1098,7 @@ def run_layouts(job, out, font, font_index=0, brand='kangsheng'):
             shutil.rmtree(d, ignore_errors=True); return rep
         out_ = Path(out)
         if alt.get('rail_stacked') and alt['scale'] >= 0.97 * rep['scale']:
-            for f in out_.iterdir():
-                if f.is_file() and f.name != 'title-font.ttf': f.unlink()
-            for f in d.iterdir(): shutil.copy2(f, out_ / f.name)
+            for f in d.iterdir(): shutil.copy2(f, out_ / f.name)   # same file names: overwrites the plain run's outputs only
             alt = json.loads((out_ / 'report.json').read_text(encoding='utf-8'))
             alt['layout_choice'] = 'kangsheng_column'; alt['layout_scales'] = {'plain': rep['scale'], 'kangsheng_column': alt['scale']}
             alt['output'] = str(out_ / Path(alt['output']).name)
