@@ -559,6 +559,16 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
             for q in lst:
                 q['r'] = fitz.Rect()
                 for i in q['idx']: q['r'] |= rects[i]
+    top_tables = []
+    if (tpl.get('pin_table_top') or job.get('pin_table_top')) and slot:
+        # house rule (SKILL): the pin/dimension table sits top-right and the performance notes stack right under it,
+        # so a table found at the bottom of the sheet joins the top of the right column instead of the bottom slot
+        def n_rules(b_):
+            return sum(1 for i in b_['idx'] for it in keep[i]['items'] if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3
+                       and abs(it[1].x - it[2].x) > 0.6 * b_['r'].width)
+        top_tables = []
+        for b_ in [q for q in slot if n_rules(q) >= 3]:
+            slot.remove(b_); top_tables.append(b_)
     mats = {}
     RAIL = fitz.Rect(B['rail'].x0, B['rail'].y0, B['rail'].x1 - tpl.get('rail_margin', 0), B['rail'].y1)
     if rail:
@@ -576,6 +586,22 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         m_ = fitz.Matrix(sc, 0, 0, sc, x - rb.x0 * sc, y - rb.y0 * sc)
         for b_ in rail:
             for i in b_['idx']: mats[i] = (m_, sc)
+        if top_tables and rail:
+            # pin/dimension table on top of the right column; the column's own content keeps its layout, placed under it
+            tb = fitz.Rect()
+            for b_ in top_tables: tb |= b_['r']
+            gap = 8.0
+            sc = min(rw / max(tb.width, rb.width), RAIL.height / (tb.height + gap + rb.height))
+            if tpl.get('rail_cap'): sc = min(sc, tpl['rail_cap'] * uni)
+            xt = RAIL.x1 - tb.width * sc
+            mt = fitz.Matrix(sc, 0, 0, sc, xt - tb.x0 * sc, RAIL.y0 - tb.y0 * sc)
+            for b_ in top_tables:
+                for i in b_['idx']: mats[i] = (mt, sc)
+            x = RAIL.x1 - rb.width * sc; y = RAIL.y0 + tb.height * sc + gap
+            m_ = fitz.Matrix(sc, 0, 0, sc, x - rb.x0 * sc, y - rb.y0 * sc)
+            for b_ in rail:
+                for i in b_['idx']: mats[i] = (m_, sc)
+            x = min(x, xt); rail = rail + top_tables
         if rail and tpl.get('rail_stack') and len(rail) > 1:
             # house rule: pin/dimension table top-right, performance notes stacked directly below it
             gap = 8.0
@@ -621,6 +647,8 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         rail_x0 = x - 10 if rail else B['views_area'].x1
     else:
         rail_x0 = B['views_area'].x1
+    if top_tables and not any(i in mats for b_ in top_tables for i in b_['idx']):
+        slot += top_tables   # no right column to sit on top of: the table goes back to the bottom slot as before
     # views keep their arrangement, enlarged uniformly into the left area, clear of the title block
     vb = fitz.Rect()
     for b_ in views: vb |= b_['r']

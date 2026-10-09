@@ -198,7 +198,8 @@
    "bottom_slot": true,
    "rail_cap": 1.15,
    "join_line_pieces": true,
-   "split_paths": true
+   "split_paths": true,
+   "pin_table_top": true
   },
   "Z_zhiyuan_cad2": {
    "desc": "质源 CAD 图框（cad2pdf 文字为线条的版本，标题栏略低）：同 Z_zhiyuan_cad",

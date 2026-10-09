@@ -213,7 +213,7 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 | `CEN_cenlink` | 欣訊(CEN LINK)图框：右上 REV/DESCRIPTION/ECN/DATE/DRAWER 修订栏（可达 3 行，取到 0.092），右下 CEN logo+标题栏；Notes（含订购编号图）保留 |
 | `DT_dingte` | 鼎特(Dingte)图框：整页外框，右上小修订栏，右下标题栏；四边 Autodesk 水印用边缘窄带去掉（水印是文字轮廓，没有专门的水印逻辑） |
 
-**模板开关（写在模板里，只对该图框生效）：** `bottom_slot`、`table_band_top`、`frame_pad`、`rail_cap`（右栏字不超过图的放大倍数×该值）、`join_line_pieces`、`split_paths`、`rail_stack`、`line_extent_fix`、`width_cap`（输出线宽上限）、`layout: "sheet"`（保持整页布局，不拉右栏）、`fit_search`（在标题栏外找最大可放缩放；不写时若普通缩放放不下会自动启用）、`frame_bottom`（模板也可写，job 里的优先；自动判图框时只能靠模板），`rail_pull`（[[x0,y0,x1,y1],…]：这些区域的东西拉到右栏最上面，例如 PIN 表）、`rail_margin`、`frame_search`（内框搜索带，默认 0.12；大字写在框外的图用 0.3）。
+**模板开关（写在模板里，只对该图框生效）：** `bottom_slot`、`table_band_top`、`frame_pad`、`rail_cap`（右栏字不超过图的放大倍数×该值）、`join_line_pieces`、`split_paths`、`rail_stack`、`line_extent_fix`、`width_cap`（输出线宽上限）、`layout: "sheet"`（保持整页布局，不拉右栏）、`fit_search`（在标题栏外找最大可放缩放；不写时若普通缩放放不下会自动启用）、`frame_bottom`（模板也可写，job 里的优先；自动判图框时只能靠模板），`pin_table_top`（原图把 Pin/尺寸表画在底部时，把它放到右栏最上面、右栏原有内容（性能说明等）整体接在它下面——康生固定布局；job 也可写），`rail_pull`（[[x0,y0,x1,y1],…]：这些区域的东西拉到右栏最上面，例如 PIN 表）、`rail_margin`、`frame_search`（内框搜索带，默认 0.12；大字写在框外的图用 0.3）。
 
 **表格贴着供应商图框边**：零件表/Pin 表画到图框左右边时，原图常拿图框线当表格外边框，去框后会缺边。程序会在「三条以上同起点的表格横线都止于图框左右边」时补回这段边线（report 里 `table_side_restored`，2026-10-03 起，两个品牌都生效）。看对照图时仍要核对表格四边完整。
 
