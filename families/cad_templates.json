@@ -1242,6 +1242,28 @@
     ]
    ],
    "fit_search": true
+  },
+  "XZ_dg": {
+   "desc": "东莞市协展(Micro USB)图框：数字/字母格号外框，四边 Autodesk 教育版水印，右上 REV/LOCAS 修订栏，右下 MEASURE POINT+公司名+公差+DESIGN/TITLE 标题栏；NOTES 常写出内框右线（split_early+frame_pad 12+margin_attach 保住越框文字、去掉格号和刻度）",
+   "furniture_frac": [
+    [
+     0.53,
+     0.815,
+     1.0,
+     1.0
+    ],
+    [
+     0.763,
+     0.0,
+     1.0,
+     0.05
+    ]
+   ],
+   "fit_search": true,
+   "split_early": true,
+   "frame_pad": 12,
+   "margin_attach": true,
+   "layout": "plain"
   }
  }
 }

@@ -349,6 +349,36 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
                 y = q.y0 if out.y < q.y0 else q.y1
                 if abs(inn.y - y) > 1: return ('l', out, fitz.Point(inn.x, y))
         return it
+    if tpl.get('split_early'):
+        # some text-to-outline exports put whole note paragraphs AND the margin watermark into ONE path that runs past
+        # the frame: split such big paths into spatially separate pieces before the frame test, so the notes stay
+        ge = 0.004 * I.width; D2 = []
+        for d in D:
+            its = d['items']; r = d['rect']
+            if len(its) < 20 or fitz.Rect(I.x0 - 1, I.y0 - 1, I.x1 + 1, I.y1 + 1).contains(r):
+                D2.append(d); continue
+            def _bx(it):
+                P_ = [q for q in it[1:] if isinstance(q, fitz.Point)]
+                if not P_: return fitz.Rect(it[1].rect if it[0] == 'qu' else it[1])
+                return fitz.Rect(min(q.x for q in P_), min(q.y for q in P_), max(q.x for q in P_), max(q.y for q in P_))
+            bx = [_bx(it) for it in its]; pa = list(range(len(its)))
+            def _f(i):
+                while pa[i] != i: pa[i] = pa[pa[i]]; i = pa[i]
+                return i
+            order = sorted(range(len(its)), key=lambda i: bx[i].x0)
+            for a_i, i in enumerate(order):   # sweep in x: only nearby items are compared
+                for j in order[a_i + 1:]:
+                    if bx[j].x0 > bx[i].x1 + ge: break
+                    if bx[j].y0 <= bx[i].y1 + ge and bx[i].y0 <= bx[j].y1 + ge: pa[_f(j)] = _f(i)
+            grp = collections.defaultdict(list)
+            for i in range(len(its)): grp[_f(i)].append(i)
+            if len(grp) == 1: D2.append(d); continue
+            for idx in grp.values():
+                e = dict(d); e['items'] = [its[i] for i in idx]; e['closePath'] = False
+                e['rect'] = fitz.Rect(min(bx[i].x0 for i in idx), min(bx[i].y0 for i in idx), max(bx[i].x1 for i in idx), max(bx[i].y1 for i in idx))
+                D2.append(e)
+            dropped['paths_split_early'] += 1
+        D = D2
     for d in D:
         if furn and any(it[0] == 'l' for it in d['items']):
             its = [trim(it) for it in d['items']]
@@ -358,14 +388,15 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
                 if P_: d['rect'] = fitz.Rect(min(q.x for q in P_), min(q.y for q in P_), max(q.x for q in P_), max(q.y for q in P_))
         r = d['rect']
         fp = tpl.get('frame_pad', 0.5)   # tables drawn up to the outer frame line need a little more slack
+        edge_min = 0.02 * min(I.width, I.height) if tpl.get('margin_attach') else 2.0   # (letter strokes of note text that ends on the frame line)
         if not fitz.Rect(I.x0 - fp, I.y0 - fp, I.x1 + fp, I.y1 + fp).contains(r):
             dropped['frame_band'] += 1; continue
         if r.width > 0.9 * I.width or r.height > 0.9 * I.height:
             dropped['frame_rule'] += 1; continue
         # a long straight rule lying on the inner-frame edge (e.g. the title-block top line) is frame, not drawing
         if all(it[0] == 'l' for it in d['items']) and (
-                (r.height < 0.6 and r.width > 2.0 and min(abs(r.y0 - I.y0), abs(r.y1 - I.y1)) < 1.0) or
-                (r.width < 0.6 and r.height > 2.0 and min(abs(r.x0 - I.x0), abs(r.x1 - I.x1)) < 1.0)):
+                (r.height < 0.6 and r.width > edge_min and min(abs(r.y0 - I.y0), abs(r.y1 - I.y1)) < 1.0) or
+                (r.width < 0.6 and r.height > edge_min and min(abs(r.x0 - I.x0), abs(r.x1 - I.x1)) < 1.0)):
             dropped['frame_rule'] += 1; continue
         if inside_any(r, furn):
             dropped['title_or_rev'] += 1; continue
@@ -394,6 +425,29 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
                    fitz.Rect(q.x0 - 0.6, q.y0 - 0.6, q.x1 + 0.6, q.y1 + 0.6).contains(b_) for q in furn):
                 dropped['title_or_rev'] += 1; continue
         keep.append(d)
+    if tpl.get('margin_attach'):
+        # with a wide frame_pad: pieces in the margin band (outside the inner frame) stay only when they chain to
+        # content inside the frame (note text running past the frame line); isolated ones (grid labels, ticks,
+        # watermark letters) are frame
+        Iin = fitz.Rect(I.x0 + 0.5, I.y0 + 0.5, I.x1 - 0.5, I.y1 - 0.5)
+        gap_ = 0.011 * I.width   # wider than a word space in note text
+        def _tick(d):   # frame tick marks: one straight axis-aligned stroke
+            its = d['items']
+            return (len(its) == 1 and its[0][0] == 'l' and (abs(its[0][1].x - its[0][2].x) < 0.3 or abs(its[0][1].y - its[0][2].y) < 0.3)
+                    and any(min(abs(q.x - I.x0), abs(q.x - I.x1), abs(q.y - I.y0), abs(q.y - I.y1)) < 0.6 for q in its[0][1:3])   # starts on the frame line
+                    and any(not fitz.Rect(I.x0 - 1, I.y0 - 1, I.x1 + 1, I.y1 + 1).contains(q) for q in its[0][1:3]))   # and points outward
+        ok_ = [Iin.contains(d['rect']) for d in keep]
+        tick_ = [not o and _tick(d) for o, d in zip(ok_, keep)]
+        changed = True
+        while changed:
+            changed = False
+            acc = [keep[k]['rect'] for k in range(len(keep)) if ok_[k]]
+            for k, d in enumerate(keep):
+                if ok_[k] or tick_[k]: continue
+                r = fitz.Rect(d['rect'].x0 - gap_, d['rect'].y0 - gap_, d['rect'].x1 + gap_, d['rect'].y1 + gap_)
+                if any(r.intersects(q) and (q & Iin).width >= 0 for q in acc if q.x1 >= r.x0 and q.x0 <= r.x1):
+                    ok_[k] = True; changed = True
+        n0 = len(keep); keep = [d for k, d in enumerate(keep) if ok_[k]]; dropped['margin_isolated'] += n0 - len(keep)
     if not keep: raise SystemExit('NOTHING_TO_PLACE')
     # a table standing on the supplier title block shares its bottom rule with the block: when three or more
     # kept vertical rules end on a removed area's top edge, redraw the bottom rule between them
