@@ -141,3 +141,4 @@ OK 的 178 张按模板分 22 组，每组抽 2–3 张（分数最低的优先�
 - 2026-10-09 按飞书「全图纸」表供应商字段扩模板：每家抽 ≤8 张（68 家 315 张，本机 work/supplier-scan-20261009/），判图框 OK 46 / UNKNOWN 160+ / AMBIGUOUS 24 / NO_FRAME 29。新增模板 JBL_green、JBL_black（金倍利）、JT_jiate（嘉特）、YY_yangyi（阳益/YU HONG DA）、JWT_jiaweite（佳伟特，同质源标题栏）、LF_lvfeng_full（绿丰整框版：零件表在内框内，旧 LF_lvfeng_inner 会把整张零件表去掉——**以前用 LF_lvfeng_inner 出的绿丰图可能缺零件表，要重查**）。新工具 tools/new_template.py；cad_family 加 OFF_SHEET 警告（原图线条落在图框外）。回归 0 差异。
 - 2026-10-10 续扩模板：美金兴 MJX_rohs（白色遮挡框不再画成蓝条）、协展 XZ_dg（新开关 split_early/margin_attach，越框说明文字保住、格号刻度去掉）；样本 +：XZ_xiezhan、PS_pinshang、K_ktl_structure、AL_ailiante、LP_lianpan×2、Z_zhiyuan_cad×4。待处理清单在本机 work/supplier-scan-20261009/pending.txt（联攀竖版内容在 CAD 里转了 90°、高高达每张框不同、艾联特方向/公司名残留、品尚两张标题栏残留、协展 0100 圆形设计章、质源 0193 尺寸分离）。回归 26 任务 0 差异。
 - 2026-10-10：新增上丰 SF_triumph（TRIUMPH 电池座框，rotate 270；样本 5 张）。回归 0 差异。
+- 2026-10-10：联攀「竖版」其实是页面带 /Rotate 270 的正常横版框，指纹匹配误多转 270°；按 rotate 0 登记 3 个样本后自动判对。0035/0039 各 1 条线 OFF_SHEET 待查。
