@@ -1264,6 +1264,30 @@
    "frame_pad": 12,
    "margin_attach": true,
    "layout": "plain"
+  },
+  "SF_triumph": {
+   "desc": "上丰(TRIUMPH Electronics)电池连接器图框（原图竖放，rotate 270）：右下 Tolerance/UNITS/Name/Modle/DWG NO 标题栏，右上 REVISIONS 空修订栏，左边竖排保密声明；PART NO/DIM 表保留",
+   "furniture_frac": [
+    [
+     0.47,
+     0.855,
+     1.0,
+     1.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.035,
+     1.0
+    ],
+    [
+     0.62,
+     0.0,
+     1.0,
+     0.075
+    ]
+   ],
+   "fit_search": true
   }
  }
 }
