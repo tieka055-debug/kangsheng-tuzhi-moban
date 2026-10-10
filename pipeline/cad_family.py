@@ -49,8 +49,9 @@ def segments(D, orient):
         for it in d['items']:
             if it[0] == 'l':
                 a, b = it[1], it[2]
-                if orient == 'H' and abs(a.y - b.y) < 0.3: out.append((min(a.x, b.x), max(a.x, b.x), (a.y + b.y) / 2))
-                if orient == 'V' and abs(a.x - b.x) < 0.3: out.append((min(a.y, b.y), max(a.y, b.y), (a.x + b.x) / 2))
+                tol = max(0.3, 0.002 * (abs(a.x - b.x) + abs(a.y - b.y)))   # long frame rules drawn ~1pt off level
+                if orient == 'H' and abs(a.y - b.y) < tol: out.append((min(a.x, b.x), max(a.x, b.x), (a.y + b.y) / 2))
+                if orient == 'V' and abs(a.x - b.x) < tol: out.append((min(a.y, b.y), max(a.y, b.y), (a.x + b.x) / 2))
             elif it[0] in ('re', 'qu'):
                 r = it[1] if it[0] == 're' else it[1].rect
                 if it[0] == 'qu' and not (it[1].is_rectangular or _axis_quad(it[1])): continue
