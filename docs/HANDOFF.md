@@ -156,3 +156,4 @@ OK 的 178 张按模板分 22 组，每组抽 2–3 张（分数最低的优先�
 - 2026-10-10 晚续 4：残留批新增 MJ2_dgmj(0025)、XZ_autodesk(0099)、CY3_chuangyue(0103)、DT2_struct(0015)、YY2_typec(0088)、YY3_autodesk(0092)；0134 登记 CQ_chart_dwg。new_template.py 不能并行跑（同时跑会互相覆盖输出）。
 - 2026-10-10 晚续 5：`cad_family.segments` 水平/竖直判定容差改为 max(0.3, 0.2%×线长)（利托 0159/0160/0162 外框线两端差 1pt，之前 FRAME_NOT_FOUND）；登记为 LT_lituo 样本。回归 26 任务 0 差异。
 - 2026-10-10 晚续 6：开关类新增 KD_kwanda(0292)、LX_lingxiang(0297)、HY2_huayi(0290/0293/0291)。
+- 2026-10-10 晚续 7：修 tools/new_template.py——测试出图时把草稿临时写进 cad_templates.json、结束整份还原，并行起草会互相覆盖，导致 T0015/T0025/T0099/T0103/T0197 五个草稿残留并被 bd91e8a 提交（已删）。现在每次改文件都加锁（families/cad_templates.lock，跨平台），结束时只撤掉自己那一项；两个起草并行跑后文件 md5 不变。

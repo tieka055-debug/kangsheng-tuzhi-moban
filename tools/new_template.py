@@ -5,7 +5,7 @@
 不加 --write：只打印起草的 furniture_frac 并出测试图（<out>/草稿-原图对照.png），不改仓库。
 看过对照图合格后加 --write 写进 families/cad_templates.json，再用 frame_match.py --learn 登记样本。
 --extra 用来补自动没找到的区域（比例 0-1，相对内框），例如左上的 RoHS 框、四边水印带。"""
-import argparse, bisect, collections, json, re, sys, tempfile
+import argparse, os, time, bisect, collections, json, re, sys, tempfile
 from pathlib import Path
 import fitz
 ROOT = Path(__file__).resolve().parents[1]
@@ -317,17 +317,34 @@ def main():
     z = 1800 / max(op.rect.width, op.rect.height)
     op.get_pixmap(matrix=fitz.Matrix(z, z)).save(out / '草稿-去掉的区域.png')
     import cad_family as CF
-    orig = path.read_text(encoding='utf-8')
-    T['templates'][a.name] = tpl
+    # the draft goes into the shared template file only while this render runs; other drafts may run at the same
+    # time, so take a lock file around each edit and on the way out remove only our own entry (never rewrite the
+    # whole file from an old copy -- that dropped or resurrected other runs' entries)
+    lock = path.with_suffix('.lock')
+
+    def edit(fn):
+        for _ in range(600):
+            try:
+                fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY); break
+            except FileExistsError:
+                time.sleep(0.1)
+        else:
+            raise SystemExit(f'模板文件被锁住（{lock}），确认没有别的起草在跑后删掉它再试')
+        try:
+            T_ = json.loads(path.read_text(encoding='utf-8')); fn(T_['templates'])
+            path.write_text(json.dumps(T_, ensure_ascii=False, indent=1) + '\n', encoding='utf-8')
+        finally:
+            os.close(fd); os.remove(str(lock))
+    had = T['templates'].get(a.name)
     try:
-        path.write_text(json.dumps(T, ensure_ascii=False, indent=1) + '\n', encoding='utf-8')
+        edit(lambda t: t.__setitem__(a.name, tpl))
         job = {'source': str(Path(a.pdf).resolve()), 'model': '草稿', 'title': '连接器', 'template': a.name, 'rotate': a.rotate,
                'tolerance': {'linear_tolerances': [{'tier': 'X.', 'value': '±0.3'}], 'angular_tolerances': [], 'additional_tolerance_conditions': []}}
         import fonts as FT
         f, fi = FT.default_font()
         CF.run_layouts(job, out, f, fi)
     finally:
-        path.write_text(orig, encoding='utf-8')
+        edit(lambda t: t.__setitem__(a.name, had) if had is not None else t.pop(a.name, None))
     print('测试图', out / '草稿-原图对照.png')
 
 
