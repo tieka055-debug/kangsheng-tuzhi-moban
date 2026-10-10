@@ -1465,6 +1465,25 @@
     ]
    ],
    "fit_search": true
+  },
+  "LG_ligun": {
+   "desc": "立冠(LX+CX) DC 插座图框：8–1/D–A 格号外框，左下 ECN/REV 修订栏、右下公差+DRAWN/DESIGN+TITLE/PART NO 标题栏去掉；零件表、技术特性、PCB、SCHEMATIC 保留；需 frame_bottom=inner_ring",
+   "furniture_frac": [
+    [
+     0.574,
+     0.872,
+     1.0,
+     1.0
+    ],
+    [
+     0.0,
+     0.912,
+     0.574,
+     1.0
+    ]
+   ],
+   "fit_search": true,
+   "frame_bottom": "inner_ring"
   }
  }
 }

@@ -36,6 +36,12 @@ def ckey(c):
     return None if c is None else tuple(round(v, 2) for v in c)
 
 
+def _axis_quad(q):
+    """axis-aligned rectangle given as a quad whose corners come in mirrored order (is_rectangular is False then)"""
+    xs = sorted(p.x for p in q); ys = sorted(p.y for p in q)
+    return xs[1] - xs[0] < 0.3 and xs[3] - xs[2] < 0.3 and ys[1] - ys[0] < 0.3 and ys[3] - ys[2] < 0.3
+
+
 def segments(D, orient):
     """all axis-parallel straight segments (lines and rectangle edges): (lo, hi, coord)"""
     out = []
@@ -47,7 +53,7 @@ def segments(D, orient):
                 if orient == 'V' and abs(a.x - b.x) < 0.3: out.append((min(a.y, b.y), max(a.y, b.y), (a.x + b.x) / 2))
             elif it[0] in ('re', 'qu'):
                 r = it[1] if it[0] == 're' else it[1].rect
-                if it[0] == 'qu' and not it[1].is_rectangular: continue
+                if it[0] == 'qu' and not (it[1].is_rectangular or _axis_quad(it[1])): continue
                 if orient == 'H': out += [(r.x0, r.x1, r.y0), (r.x0, r.x1, r.y1)]
                 else: out += [(r.y0, r.y1, r.x0), (r.y0, r.y1, r.x1)]
     return out
