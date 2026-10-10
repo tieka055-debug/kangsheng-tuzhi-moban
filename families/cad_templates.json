@@ -1368,6 +1368,42 @@
    ],
    "fit_search": true,
    "frame_bottom": "inner_ring"
+  },
+  "QC_qincheng": {
+   "desc": "勤诚/北冠 PGC 弹簧针图框：10–1/F–A 格号外框，左上 PGC P/N+SPECIFICATION 小表、左下 REVISION/Date/Revision record 修订栏、右下 TOLERANCES+DWN/APVD/CHK+公司名标题栏去掉；Notes、Mechanical performance 表、PCB 保留",
+   "furniture_frac": [
+    [
+     0.0,
+     0.0,
+     0.24,
+     0.075
+    ],
+    [
+     0.0,
+     0.912,
+     0.593,
+     1.0
+    ],
+    [
+     0.593,
+     0.84,
+     1.0,
+     1.0
+    ]
+   ],
+   "fit_search": true
+  },
+  "ZJ_zhongjiang": {
+   "desc": "中江(ZhongJiang)弹簧针图框（原图竖放 rotate 270）：4–1/D–A 格号外框，右下公司名+產品名稱/規格/材料/繪圖審核标题栏去掉；左下中文说明保留",
+   "furniture_frac": [
+    [
+     0.633,
+     0.785,
+     1.0,
+     1.0
+    ]
+   ],
+   "fit_search": true
   }
  }
 }
