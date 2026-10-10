@@ -5,5 +5,6 @@
 - 读公差时只读本图的小图，逐行照原图写，不跨型号抄值。
 - 修改代码后先运行 `python -m unittest discover -s tests`，再在本机回归清单上重跑，确认没有退步。
 - 回填飞书用 `tools/feishu_backfill.py`，缺图备注用 `tools/feishu_note.py`；base/table/字段 ID 运行时传参。
+- 遇到认不出的新供应商图框：按 `docs/NEW_SUPPLIER.md` 自己起草模板、看对照图、经人认可后写入并登记样本；学到的新技巧补回该文件（skill 自我进化）。
 - 不上传原图、成品、业务数据。
 - 同事可能用 Mac 或 Windows、用不同的智能体：不要写死本机路径；字体不传时程序自动找系统黑体（`engine/fonts.py`）；读写文本一律 `encoding='utf-8'`。

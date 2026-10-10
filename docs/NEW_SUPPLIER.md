@@ -1,0 +1,70 @@
+# 遇到新供应商图框：自助建模板（任何智能体照做）
+
+目标：这个 skill 自己长大。任何人、任何智能体（Claude Code、Codex/GPT…）、Mac 或 Windows，遇到认不出的图框，都按下面做成模板并沉淀，下次自动认出。**模板和样本必须经人看过对照图认可才写入。**
+
+## 0. 准备
+- Python 环境按 README；Ghostscript 能运行（`gs -v` / `gswin64c -v`）。字体不用传。
+- 先 `git pull`。
+
+## 1. 判框
+```
+python pipeline/frame_match.py 原图.pdf
+```
+- `OK` → 不用建模板，直接出图。
+- `UNKNOWN_FRAME` / `AMBIGUOUS` / `NO_FRAME` → 往下。
+- 多页 PDF（承认书）：`python tools/drawing_pages.py 原图.pdf 输出目录` 挑出图纸页再判。
+- 原图是扫描件/图片（`page.get_drawings()` 几乎为空）→ 不做，备注「缺矢量原图」。
+
+## 2. 先试已有模板（很多「新」图只是样本不够）
+看结果里「最像」的模板，指定它出一张：job 里写 `"template": "最像的模板"`、`"rotate": N`，看 `*-原图对照.png`。
+干净 → 跳到第 5 步登记样本即可。
+**方向不对**（内容横躺/倒置）：换 `rotate` 0/90/180/270 试；页面自带 /Rotate 的图常被多转一次。
+
+## 3. 起草新模板
+```
+python tools/new_template.py 原图.pdf 模板名 [--rotate 270] --out 草稿目录
+```
+看两张图：
+- `草稿-去掉的区域.png`：红框 = 要去掉的供应商东西（标题栏、修订栏、RoHS、公司名、空 BOM、四边水印/保密声明）。**红框里不能有零件表、说明、尺寸**——自动量的常把标题栏上方的零件表一起框进去。
+- `草稿-原图对照.png`：右边康生图，逐项核对。
+
+不对就手写区域（比例 0–1，相对内框）：
+```
+python tools/new_template.py 原图.pdf 模板名 --no-auto --extra x0,y0,x1,y1 x0,y0,x1,y1 … --out 草稿目录
+```
+（zsh 下多个区域直接写在命令里，不要放进一个变量。）
+
+## 4. 常见问题 → 模板开关（`--opt 键=值`）
+| 现象 | 开关 |
+|---|---|
+| 零件表/说明在内框里、标题栏也在内框里（内外双框） | `--frame-bottom inner_ring` 或 `title_top` |
+| 视图被放到图框外（report 报 OFF_SHEET） | `line_extent_fix=true` |
+| 说明文字写出了内框线、被切掉 | `split_early=true` `frame_pad=12` `margin_attach=true` |
+| 字形长尖刺 | `round_joins=true` |
+| 线条变得很粗 | `width_cap=1.2` |
+| 自动重排把一张图撕开 / 原图右栏本来就好 | `layout=plain` |
+| 右栏要 Pin 表在上、说明在下 | `rail_stack=true` |
+尺寸数字下的白色遮挡块、白色字形、黑底图都由程序自动处理，不用开关。
+
+## 5. 认可后沉淀
+1. 同样参数加 `--desc "供应商+图框特征" --write` 写进 `families/cad_templates.json`。
+2. 登记 2–5 张**看过对照图、干净的**样本：
+   ```
+   python pipeline/frame_match.py --learn 模板名 原图.pdf [--rotate N]
+   ```
+   同一供应商内部表格差异大时多登记几张；不干净的不登记。
+3. 用 `frame_match.py` 复判同供应商其他图，看是否变成 `OK`。
+
+## 6. 验证与提交
+```
+python -m unittest discover -s tests
+python tools/regress.py <回归包目录>       # 必须 0 差异；单独跑，别和别的出图并行
+```
+有差异要逐张看对照图确认是改进，再把 `tools/regress.py` 默认基线改到新提交。
+提交信息写清模板名和供应商；在 `docs/HANDOFF.md` 末尾追加一行（新模板、新坑）。
+**学到新技巧（新开关、新坑）要补进本文件的第 4 节**——这就是 skill 的「自我进化」。
+
+## 不要做
+- 不为单张图改别家共用的模板比例；单张例外用 job 里的 `furniture_frac` 覆盖。
+- 不登记没看过对照图的样本；认不出就不硬套最像的模板。
+- 不上传原图、成品、飞书业务数据。
