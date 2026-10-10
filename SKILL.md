@@ -219,6 +219,9 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 | `ZJ_zhongjiang` | 中江弹簧针框（竖放 rotate 270）：4–1/D–A 格号外框，右下公司名+產品名稱/規格/材料标题栏去掉；左下中文说明保留 |
 | `CY2_chuangyue` | 创粤 USB 竖放框（rotate 270）：右下公司名+图纸名称/料号标题栏、其左公差表、右上修订栏去掉；备注、PCB 保留。同家框比例不同的（0107）会丢视图，只认样本那种 |
 | `LG_ligun` | 立冠(LX+CX) DC 插座框：8–1/D–A 格号外框，左下 ECN/REV 修订栏、右下公差+DRAWN+TITLE/PART NO 标题栏去掉；零件表、技术特性、PCB、SCHEMATIC 保留；需 `frame_bottom: inner_ring`。部分页面带 /Rotate，外框是点序镜像的 quad（已支持） |
+| `EJ_jack_cn` | 乐清耳机/DC 插座国标框（永晖/丽伟达/永威通用）：左侧登记栏在框外，左上小号框、右下更改标记+签名+型号+等级/比例标题栏去掉；技术性能/要求、按点示意图、零件表保留 |
+| `LC_licheng` | 立诚微动开关框（竖放 rotate 270）：右上 RoHS+修订栏、底部整条公司名+标题栏去掉；SPECIFICATIONS、零件表、PCB、CIRCUIT 保留；`layout: sheet` |
+| `AL2_ailiante` | 艾联特 Type-C 框（零件表在标题栏正上方版）：右上修订栏、右下 RoHS 声明行+logo+TITLE/公差/版权去掉；零件表、Pin 表、NOTES、料号说明保留（规格书先挑图纸页） |
 
 **模板开关（写在模板里，只对该图框生效）：** `bottom_slot`、`table_band_top`、`frame_pad`、`rail_cap`（右栏字不超过图的放大倍数×该值）、`join_line_pieces`、`split_paths`、`rail_stack`、`line_extent_fix`、`width_cap`（输出线宽上限）、`layout: "sheet"`（保持整页布局，不拉右栏）、`fit_search`（在标题栏外找最大可放缩放；不写时若普通缩放放不下会自动启用）、`frame_bottom`（模板也可写，job 里的优先；自动判图框时只能靠模板），`pin_table_top`（原图把 Pin/尺寸表画在底部时，把它放到右栏最上面、右栏原有内容接在下面；配合 `rail_notes_only` 让右栏只放表和文字说明、PCB 等图回视图区。可写 `"auto"`：程序同时出「原排法 / Pin 表右上 / Pin 表右上+右栏只放文字」三版，Pin 表右上的版本视图不小于原排法的 90% 就用它，否则用原排法，report.json 里 `layout_choice` 记着选了哪版。Z_zhiyuan_cad 已设 auto），`rail_pull`（[[x0,y0,x1,y1],…]：这些区域的东西拉到右栏最上面，例如 PIN 表；job 里也可写，配合 `rail_stack: true` 做成「Pin 表右上、NOTE 接下面」）、`gold_colours`（[[r,g,b],…]：这些原图颜色强制转金，例如尺寸字和 NOTE 同为绿色时；加 `gold_views_only: true` 则右栏的表格和文字说明仍为蓝色，右栏里的视图照样转金；job 里也可写）、`rail_margin`、`frame_search`（内框搜索带，默认 0.12；大字写在框外的图用 0.3）。
 

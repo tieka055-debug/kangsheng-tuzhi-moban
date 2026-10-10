@@ -1484,6 +1484,67 @@
    ],
    "fit_search": true,
    "frame_bottom": "inner_ring"
+  },
+  "EJ_jack_cn": {
+   "desc": "乐清耳机/DC 插座国标框（永晖/丽伟达/永威通用）：左侧借用登记栏在框外，左上小号框、右下更改标记+签名+型号+等级/比例标题栏去掉；主要技术性能/要求、按点示意图、零件表保留；右上 Foxit 水印一并去掉",
+   "furniture_frac": [
+    [
+     0.0,
+     0.0,
+     0.128,
+     0.052
+    ],
+    [
+     0.532,
+     0.826,
+     1.0,
+     1.0
+    ],
+    [
+     0.7,
+     0.0,
+     1.0,
+     0.085
+    ]
+   ],
+   "fit_search": true
+  },
+  "LC_licheng": {
+   "desc": "立诚(李建辉)微动开关框（原图竖放 rotate 270）：F–A/1–4 格号外框，右上 RoHS+SYMBOL/REVISION 修订栏、底部整条公司名+PART NAME/公差标题栏去掉；SPECIFICATIONS、零件表、PCB、CIRCUIT 保留；layout=sheet（右栏会把 PCB 说明和图拆开）",
+   "furniture_frac": [
+    [
+     0.0,
+     0.894,
+     1.0,
+     1.0
+    ],
+    [
+     0.583,
+     0.0,
+     1.0,
+     0.07
+    ]
+   ],
+   "fit_search": true,
+   "layout": "sheet"
+  },
+  "AL2_ailiante": {
+   "desc": "艾联特 Type-C 图框（零件表在标题栏正上方版）：1–8/A–F 格号外框，右上 REV/LTR/DESCRIPTION 修订栏、右下 RoHS 声明行+公司 logo+TITLE/公差/版权标题栏去掉；零件表、Pin 表、NOTES、料号说明保留",
+   "furniture_frac": [
+    [
+     0.537,
+     0.658,
+     1.0,
+     1.0
+    ],
+    [
+     0.69,
+     0.0,
+     1.0,
+     0.044
+    ]
+   ],
+   "fit_search": true
   }
  }
 }
