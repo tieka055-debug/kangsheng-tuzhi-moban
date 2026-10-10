@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'pipeline'))
 import new_template as NT   # noqa: E402
+import frame_match as FM   # noqa: E402
 
 I = fitz.Rect(20, 20, 820, 575)
 
@@ -55,6 +56,14 @@ class PartTableTest(unittest.TestCase):
         doc, p = sheet(4, header='REV DESCRIPTION DATE', row='A{k}  2021-09-17')
         out, found, alt = NT.clear_tables(p.get_drawings(), p.get_text('words'), I, [fitz.Rect(500, 430, 820, 575)])
         self.assertEqual(found, [])
+
+
+class PickTest(unittest.TestCase):
+    def test_near_tie_keeps_page_as_it_stands(self):
+        best = [(1.0, 270, 'LP', 0.12), (0.995, 0, 'LP', 0.12), (0.9, 90, 'X', 0.12)]
+        self.assertEqual(FM.pick(best)[1], 0)
+        self.assertEqual(FM.pick([(1.0, 270, 'LP', 0.12), (0.985, 0, 'LP', 0.12)])[1], 270)   # a real difference wins
+        self.assertEqual(FM.pick([(1.0, 270, 'LP', 0.12), (0.995, 0, 'X', 0.12)])[2], 'LP')   # never swaps the template
 
 
 if __name__ == '__main__':

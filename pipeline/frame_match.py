@@ -99,17 +99,30 @@ def candidates(pdf, clip=None, page_no=0):
     return out
 
 
-def match(pdf, clip=None, page_no=0, sigs=None, exclude=None):
-    """-> {'template','rotate','score','runner_up':(template,score),'status'}"""
+def scored(pdf, clip=None, page_no=0, sigs=None, exclude=None):
+    """every (score, rotate, template, search) of this page against every sample, best first"""
     sigs = sigs or load(); best = []
     for r, g, se in candidates(pdf, clip, page_no):
         for s in sigs['samples']:
             if exclude and s.get('id') == exclude: continue
             if s.get('search', 0.12) != se: continue
             best.append((score_arr(_arr(g), _unpack_arr(s['G'])), r, s['template'], se))
-    if not best: return {'status': 'NO_FRAME', 'template': None, 'rotate': None, 'score': 0}
     best.sort(reverse=True)
-    sc, r, t, se = best[0]
+    return best
+
+
+def pick(best):
+    """top of a scored() list; when the same template scores within 0.01 with the page as it stands (rotate 0), take
+    that: sorting alone put the highest rotation first, which turned pages carrying /Rotate once more (联攀 270°)"""
+    top = best[0]
+    return next((b for b in best if b[1] == 0 and b[2] == top[2] and top[0] - b[0] < 0.01), top)
+
+
+def match(pdf, clip=None, page_no=0, sigs=None, exclude=None):
+    """-> {'template','rotate','score','runner_up':(template,score),'status'}"""
+    best = scored(pdf, clip, page_no, sigs, exclude)
+    if not best: return {'status': 'NO_FRAME', 'template': None, 'rotate': None, 'score': 0}
+    sc, r, t, se = pick(best)
     ru = next(((tt, ss) for ss, rr, tt, _ in best if tt != t), (None, 0))
     st = 'OK' if sc >= 0.90 and sc - ru[1] >= 0.03 else ('AMBIGUOUS' if sc >= 0.90 else 'UNKNOWN_FRAME')
     return {'status': st, 'template': t, 'rotate': r, 'score': round(sc, 3), 'runner_up': [ru[0], round(ru[1], 3)], 'search': se}
