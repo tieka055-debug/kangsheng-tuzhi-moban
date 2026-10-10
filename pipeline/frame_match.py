@@ -21,8 +21,8 @@ ROTS = (0, 90, 180, 270)
 SEARCHES = (0.12, 0.30)
 
 
-def _grids(page, clip=None, search=0.12):
-    """(Hgrid, Vgrid) as sets of (ix, iy) cells relative to the inner frame; None if no frame is found"""
+def _grids(page, clip=None, search=0.12, min_frac=0.10):
+    """(Hgrid, Vgrid) as sets of (ix, iy) cells relative to the inner frame (rules >= min_frac of it); None if no frame"""
     try:
         D, bb, I, _ = analyse(page, [[0, 0, 0.01, 0.01]], None, clip, search)
     except SystemExit:
@@ -31,11 +31,11 @@ def _grids(page, clip=None, search=0.12):
     H = set(); V = set()
     def cx(x): return int((x - I.x0) / I.width * N)
     def cy(y): return int((y - I.y0) / I.height * N)
-    for lo, hi, y in long_lines(D, 'H', 0.10 * I.width):
+    for lo, hi, y in long_lines(D, 'H', min_frac * I.width):
         if not (I.y0 - 0.02 * I.height <= y <= I.y1 + 0.02 * I.height): continue
         iy = min(N - 1, max(0, cy(y)))
         for ix in range(max(0, cx(max(lo, I.x0))), min(N - 1, cx(min(hi, I.x1))) + 1): H.add((ix, iy))
-    for lo, hi, x in long_lines(D, 'V', 0.10 * I.height):
+    for lo, hi, x in long_lines(D, 'V', min_frac * I.height):
         if not (I.x0 - 0.02 * I.width <= x <= I.x1 + 0.02 * I.width): continue
         ix = min(N - 1, max(0, cx(x)))
         for iy in range(max(0, cy(max(lo, I.y0))), min(N - 1, cy(min(hi, I.y1))) + 1): V.add((ix, iy))

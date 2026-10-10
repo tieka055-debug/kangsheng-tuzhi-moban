@@ -7,6 +7,7 @@ sys.path.insert(0, str(ROOT / 'pipeline'))
 import new_template as NT   # noqa: E402
 import frame_match as FM   # noqa: E402
 import try_templates as TT   # noqa: E402
+import cluster_frames as CL   # noqa: E402
 
 I = fitz.Rect(20, 20, 820, 575)
 
@@ -72,6 +73,14 @@ class TryTemplatesTest(unittest.TestCase):
         best = [(0.95, 270, 'A', 0.12), (0.945, 0, 'A', 0.12), (0.93, 90, 'B', 0.3), (0.92, 0, 'A', 0.3), (0.9, 0, 'C', 0.12),
                 (0.8, 0, 'D', 0.12)]
         self.assertEqual([(t, r) for _, r, t, _ in TT.top_templates(best, 3)], [('A', 0), ('B', 90), ('C', 0)])
+
+
+class ClusterTest(unittest.TestCase):
+    def test_star_clusters_do_not_chain(self):
+        import numpy as np
+        M = np.eye(5)
+        for i in range(4): M[i, i + 1] = M[i + 1, i] = 0.9   # a chain 0-1-2-3-4: single linkage would make one group
+        self.assertEqual(CL.cluster(M, 0.88, lambda i: 0), [(1, [0, 1, 2]), (3, [3, 4])])
 
 
 if __name__ == '__main__':
