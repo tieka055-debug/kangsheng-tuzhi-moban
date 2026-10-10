@@ -6,6 +6,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'pipeline'))
 import new_template as NT   # noqa: E402
 import frame_match as FM   # noqa: E402
+import try_templates as TT   # noqa: E402
 
 I = fitz.Rect(20, 20, 820, 575)
 
@@ -64,6 +65,13 @@ class PickTest(unittest.TestCase):
         self.assertEqual(FM.pick(best)[1], 0)
         self.assertEqual(FM.pick([(1.0, 270, 'LP', 0.12), (0.985, 0, 'LP', 0.12)])[1], 270)   # a real difference wins
         self.assertEqual(FM.pick([(1.0, 270, 'LP', 0.12), (0.995, 0, 'X', 0.12)])[2], 'LP')   # never swaps the template
+
+
+class TryTemplatesTest(unittest.TestCase):
+    def test_top_templates_are_distinct_with_own_rotation(self):
+        best = [(0.95, 270, 'A', 0.12), (0.945, 0, 'A', 0.12), (0.93, 90, 'B', 0.3), (0.92, 0, 'A', 0.3), (0.9, 0, 'C', 0.12),
+                (0.8, 0, 'D', 0.12)]
+        self.assertEqual([(t, r) for _, r, t, _ in TT.top_templates(best, 3)], [('A', 0), ('B', 90), ('C', 0)])
 
 
 if __name__ == '__main__':
