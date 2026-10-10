@@ -212,6 +212,9 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 | `WD_weiding` | 伟定(WD)图框：右上 REV/ECN/DRAWER 修订栏，右下 logo+电话+标题栏；Notes、订购编号表保留 |
 | `CEN_cenlink` | 欣訊(CEN LINK)图框：右上 REV/DESCRIPTION/ECN/DATE/DRAWER 修订栏（可达 3 行，取到 0.092），右下 CEN logo+标题栏；Notes（含订购编号图）保留 |
 | `DT_dingte` | 鼎特(Dingte)图框：整页外框，右上小修订栏，右下标题栏；四边 Autodesk 水印用边缘窄带去掉（水印是文字轮廓，没有专门的水印逻辑） |
+| `LY_leye` / `HY_haiye` | 乐业 / 海业（乐清开关）GB 外框：左侧借通用件登记栏、左上小号框、右下标题栏；左下零件表、右侧项目/规格表保留；需 `frame_bottom: inner_ring`。两家框长宽比不同，各用各的；海业每张标题栏左沿略有差异，认不出的不要硬套 |
+| `LY_leye_grid` | 乐业 1–8/A–H 格号框（竖放 rotate 270，与康生旧格号框同款）：底部标题栏（公差+产品系列+公司 logo）、右上修订栏去掉；左下电气/机械性能表、零件表保留 |
+| `CM_chenming` | 晨明拨动开关框：只有外框，底部右侧型号格+校对、公司名+审核两行去掉；零件表、规格表及「此数据仅供参考」保留。多页规格书先用 `tools/drawing_pages.py` 挑出图纸页 |
 
 **模板开关（写在模板里，只对该图框生效）：** `bottom_slot`、`table_band_top`、`frame_pad`、`rail_cap`（右栏字不超过图的放大倍数×该值）、`join_line_pieces`、`split_paths`、`rail_stack`、`line_extent_fix`、`width_cap`（输出线宽上限）、`layout: "sheet"`（保持整页布局，不拉右栏）、`fit_search`（在标题栏外找最大可放缩放；不写时若普通缩放放不下会自动启用）、`frame_bottom`（模板也可写，job 里的优先；自动判图框时只能靠模板），`pin_table_top`（原图把 Pin/尺寸表画在底部时，把它放到右栏最上面、右栏原有内容接在下面；配合 `rail_notes_only` 让右栏只放表和文字说明、PCB 等图回视图区。可写 `"auto"`：程序同时出「原排法 / Pin 表右上 / Pin 表右上+右栏只放文字」三版，Pin 表右上的版本视图不小于原排法的 90% 就用它，否则用原排法，report.json 里 `layout_choice` 记着选了哪版。Z_zhiyuan_cad 已设 auto），`rail_pull`（[[x0,y0,x1,y1],…]：这些区域的东西拉到右栏最上面，例如 PIN 表；job 里也可写，配合 `rail_stack: true` 做成「Pin 表右上、NOTE 接下面」）、`gold_colours`（[[r,g,b],…]：这些原图颜色强制转金，例如尺寸字和 NOTE 同为绿色时；加 `gold_views_only: true` 则右栏的表格和文字说明仍为蓝色，右栏里的视图照样转金；job 里也可写）、`rail_margin`、`frame_search`（内框搜索带，默认 0.12；大字写在框外的图用 0.3）。
 
