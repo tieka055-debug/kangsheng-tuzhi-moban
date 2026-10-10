@@ -155,3 +155,4 @@ OK 的 178 张按模板分 22 组，每组抽 2–3 张（分数最低的优先�
 - 2026-10-10 晚续 3：单张批量强制出图（最像模板相似度 ≥0.85 的 23 张）挑干净的登记：SU_sunup 0002、RQ_runqing 0004、A_letter 0029、CY2_chuangyue 0115、JT_jiate 0268/0269、LWD_jack 0208/0209、YY_yangyi 0085/0086/0091。0166/0198/0283 原图已是康生框。
 - 2026-10-10 晚续 4：残留批新增 MJ2_dgmj(0025)、XZ_autodesk(0099)、CY3_chuangyue(0103)、DT2_struct(0015)、YY2_typec(0088)、YY3_autodesk(0092)；0134 登记 CQ_chart_dwg。new_template.py 不能并行跑（同时跑会互相覆盖输出）。
 - 2026-10-10 晚续 5：`cad_family.segments` 水平/竖直判定容差改为 max(0.3, 0.2%×线长)（利托 0159/0160/0162 外框线两端差 1pt，之前 FRAME_NOT_FOUND）；登记为 LT_lituo 样本。回归 26 任务 0 差异。
+- 2026-10-10 晚续 6：开关类新增 KD_kwanda(0292)、LX_lingxiang(0297)、HY2_huayi(0290/0293/0291)。

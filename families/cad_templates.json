@@ -1772,6 +1772,55 @@
     ]
    ],
    "fit_search": true
+  },
+  "KD_kwanda": {
+   "desc": "KWAN DA(KD) 轻触开关框：底部左半 KD logo+TITLE/MODEL+公差标题栏去掉；右下零件表、右上 SCHEMATIC 保留",
+   "furniture_frac": [
+    [
+     0.0,
+     0.82,
+     0.55,
+     1.0
+    ]
+   ],
+   "fit_search": true
+  },
+  "LX_lingxiang": {
+   "desc": "领祥轻触开关框：左上 RoHS/REACH 小框、底部未注尺寸公差+设计审核+产品名称/公司名标题栏去掉；技术参数、零件表、H 尺寸表、PCB、电路图保留",
+   "furniture_frac": [
+    [
+     0.32,
+     0.77,
+     1.0,
+     1.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.13,
+     0.13
+    ]
+   ],
+   "fit_search": true
+  },
+  "HY2_huayi": {
+   "desc": "华益/益荣轻触开关框（原图竖放 rotate 270）：右下公司名+CUSTOMER/TITLE/型號/比例标题栏、底部整条 DRAW/DESIGN 签名+工程變更修订行去掉；零件表（含表头）、未注公差表、规格、PCB、电路图保留；split_paths",
+   "furniture_frac": [
+    [
+     0.744,
+     0.86,
+     1.0,
+     1.0
+    ],
+    [
+     0.0,
+     0.89,
+     0.744,
+     1.0
+    ]
+   ],
+   "fit_search": true,
+   "split_paths": true
   }
  }
 }

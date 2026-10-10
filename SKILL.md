@@ -229,6 +229,9 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 | `CY3_chuangyue` | 创粤 USB 2013 旧框：只有外框，右下产品图/公差一览表/公司名标题栏去掉 |
 | `DT2_struct` | 「结构图面」电池座框（rotate 270）：RoHS、结构图面+REV 修订栏、QUALITY/公差/TITLE 标题栏去掉 |
 | `YY2_typec` / `YY3_autodesk` | 阳益 Type-C 框（艾联特式）/ 阳益 USB Autodesk 框（rotate 270） |
+| `KD_kwanda` | KWAN DA 轻触开关框：底部左半 KD logo+TITLE+公差标题栏去掉；右下零件表、SCHEMATIC 保留 |
+| `LX_lingxiang` | 领祥轻触开关框：左上 RoHS/REACH、底部公差+设计审核+产品名称/公司名去掉；技术参数、零件表、H 尺寸表保留 |
+| `HY2_huayi` | 华益/益荣轻触开关框（rotate 270）：右下公司名+TITLE 标题栏、底部签名+工程變更行去掉；零件表（含表头）、未注公差表保留；`split_paths` |
 
 **模板开关（写在模板里，只对该图框生效）：** `bottom_slot`、`table_band_top`、`frame_pad`、`rail_cap`（右栏字不超过图的放大倍数×该值）、`join_line_pieces`、`split_paths`、`rail_stack`、`line_extent_fix`、`width_cap`（输出线宽上限）、`layout: "sheet"`（保持整页布局，不拉右栏）、`fit_search`（在标题栏外找最大可放缩放；不写时若普通缩放放不下会自动启用）、`frame_bottom`（模板也可写，job 里的优先；自动判图框时只能靠模板），`pin_table_top`（原图把 Pin/尺寸表画在底部时，把它放到右栏最上面、右栏原有内容接在下面；配合 `rail_notes_only` 让右栏只放表和文字说明、PCB 等图回视图区。可写 `"auto"`：程序同时出「原排法 / Pin 表右上 / Pin 表右上+右栏只放文字」三版，Pin 表右上的版本视图不小于原排法的 90% 就用它，否则用原排法，report.json 里 `layout_choice` 记着选了哪版。Z_zhiyuan_cad 已设 auto），`rail_pull`（[[x0,y0,x1,y1],…]：这些区域的东西拉到右栏最上面，例如 PIN 表；job 里也可写，配合 `rail_stack: true` 做成「Pin 表右上、NOTE 接下面」）、`gold_colours`（[[r,g,b],…]：这些原图颜色强制转金，例如尺寸字和 NOTE 同为绿色时；加 `gold_views_only: true` 则右栏的表格和文字说明仍为蓝色，右栏里的视图照样转金；job 里也可写）、`rail_margin`、`frame_search`（内框搜索带，默认 0.12；大字写在框外的图用 0.3）。
 
