@@ -1582,6 +1582,196 @@
     ]
    ],
    "fit_search": true
+  },
+  "T0099": {
+   "desc": "T0099（tools/new_template.py 起草）",
+   "furniture_frac": [
+    [
+     0.59,
+     0.825,
+     1.0,
+     1.0
+    ],
+    [
+     0.463,
+     0.8,
+     0.59,
+     0.86
+    ],
+    [
+     0.59,
+     0.0,
+     1.0,
+     0.1
+    ]
+   ],
+   "fit_search": true
+  },
+  "T0197": {
+   "desc": "T0197（tools/new_template.py 起草）",
+   "furniture_frac": [],
+   "fit_search": true
+  },
+  "T0025": {
+   "desc": "T0025（tools/new_template.py 起草）",
+   "furniture_frac": [
+    [
+     0,
+     0,
+     0.159,
+     0.059
+    ],
+    [
+     0.625,
+     0.857,
+     1,
+     1
+    ],
+    [
+     0.642,
+     0,
+     1,
+     0.078
+    ]
+   ],
+   "fit_search": true
+  },
+  "T0103": {
+   "desc": "T0103（tools/new_template.py 起草）",
+   "furniture_frac": [
+    [
+     0.49,
+     0.78,
+     1.0,
+     1.0
+    ]
+   ],
+   "fit_search": true
+  },
+  "T0015": {
+   "desc": "T0015（tools/new_template.py 起草）",
+   "furniture_frac": [],
+   "fit_search": true
+  },
+  "MJ2_dgmj": {
+   "desc": "DONGGUAN MJ 电池座框（美金兴来图）：左上「客户确认签章处」、右上修记录栏、右下 MJ logo+TITLE/公差标题栏去掉；NOTES、Part No./Dim 表、PCB 保留",
+   "furniture_frac": [
+    [
+     0,
+     0,
+     0.159,
+     0.059
+    ],
+    [
+     0.625,
+     0.857,
+     1,
+     1
+    ],
+    [
+     0.642,
+     0,
+     1,
+     0.078
+    ]
+   ],
+   "fit_search": true
+  },
+  "XZ_autodesk": {
+   "desc": "协展 Micro USB Autodesk 教育版框：右上 Pb/RoHS+Version/Change content 修订栏+产品图框、右下 title/公差/公司名标题栏去掉；左下零件表、NOTES 保留；四边 Autodesk 水印在框外",
+   "furniture_frac": [
+    [
+     0.59,
+     0.825,
+     1.0,
+     1.0
+    ],
+    [
+     0.463,
+     0.8,
+     0.59,
+     0.86
+    ],
+    [
+     0.59,
+     0.0,
+     1.0,
+     0.1
+    ]
+   ],
+   "fit_search": true
+  },
+  "CY3_chuangyue": {
+   "desc": "创粤 USB 旧框（2013 版）：只有外框，右下产品图/公差一览表/公司名标题栏去掉；规格说明、PCB 保留",
+   "furniture_frac": [
+    [
+     0.49,
+     0.78,
+     1.0,
+     1.0
+    ]
+   ],
+   "fit_search": true
+  },
+  "DT2_struct": {
+   "desc": "「结构图面」电池座框（原图竖放 rotate 270，郑宝金/北冠来图）：左上 RoHS、右上结构图面+REV 修订栏、右下 QUALITY/公差/TITLE 标题栏去掉；说明、电气性能、PCB 保留",
+   "furniture_frac": [
+    [
+     0.531,
+     0.818,
+     1.0,
+     1.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.075,
+     0.075
+    ],
+    [
+     0.556,
+     0.0,
+     1.0,
+     0.068
+    ]
+   ],
+   "fit_search": true
+  },
+  "YY2_typec": {
+   "desc": "阳益 Type-C 框（艾联特式）：右上 REV/LTR/DESCRIPTION 修订栏、右下 TOLERANCE+公司名+TITLE 标题栏去掉；NOTES、左下 PIN ASSIGNMENTS 表、PCB 保留",
+   "furniture_frac": [
+    [
+     0.6,
+     0.82,
+     1.0,
+     1.0
+    ],
+    [
+     0.62,
+     0.0,
+     1.0,
+     0.06
+    ]
+   ],
+   "fit_search": true
+  },
+  "YY3_autodesk": {
+   "desc": "阳益 USB Autodesk 教育版框（原图竖放 rotate 270）：右上标记/Modification 修订栏、右下 MANUFACTURE DWG+公差+DATE/DRAWN 标题栏去掉；Specifications、PCB 保留",
+   "furniture_frac": [
+    [
+     0.55,
+     0.84,
+     1.0,
+     1.0
+    ],
+    [
+     0.7,
+     0.0,
+     1.0,
+     0.08
+    ]
+   ],
+   "fit_search": true
   }
  }
 }
