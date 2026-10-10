@@ -42,12 +42,13 @@ python tools/new_template.py 原图.pdf 模板名 --no-auto --extra x0,y0,x1,y1 
 |---|---|
 | 零件表/说明在内框里、标题栏也在内框里（内外双框） | `--frame-bottom inner_ring` 或 `title_top` |
 | 视图被放到图框外（report 报 OFF_SHEET） | `line_extent_fix=true` |
-| 说明文字写出了内框线、被切掉 | `split_early=true` `frame_pad=12` `margin_attach=true` |
+| 说明文字写出了内框线、被切掉 | `frame_pad=12` `margin_attach=true`（`split_early` 已默认打开） |
 | 字形长尖刺 | `round_joins=true` |
 | 线条变得很粗 | `width_cap=1.2` |
 | 自动重排把一张图撕开 / 原图右栏本来就好 | `layout=plain` |
 | 右栏要 Pin 表在上、说明在下 | `rail_stack=true` |
 尺寸数字下的白色遮挡块、白色字形、黑底图都由程序自动处理，不用开关。
+表格线和图框线/格号刻度/标题栏线画在同一条路径里（表格贴框边、竖线丢光），程序自动把表格那几段直线拆出来保留（report 记 `frame_band_split`/`frame_rule_split`/`title_rules_split`）；说明字形和图框线在同一条复合路径里（鹏祥）也自动拆开（`paths_split_early`）。
 
 ## 5. 认可后沉淀
 1. 同样参数加 `--desc "供应商+图框特征" --write` 写进 `families/cad_templates.json`。
@@ -81,6 +82,7 @@ python tools/regress.py <回归包目录>       # 必须 0 差异；单独跑，
 - 2026-10-09 `OFF_SHEET` 警告：内容被放到图框外自动报出，不再靠人眼发现。
 - 2026-10-09 `tools/drawing_pages.py`：多页承认书自动挑图纸页（约 11% 的原图图纸不在第 1 页）。
 - 2026-10-10 白色遮挡块自动不画；`split_early`/`margin_attach` 解决越框文字。
+- 2026-10-10 贴框边表格丢线、复合路径说明丢字改为程序自动处理（见第 4 节），丽伟达/永威/晨明/鹏祥不再需要特殊开关。
 
 **反复出现、还靠人工的（待做，按收益排序）**
 2. 新供应商先「聚类」再建模板：把一批认不出的图按图框指纹分组，每组只建一次、自动拿组里所有图出对照拼图，一次看完再整组登记（现在逐张）。

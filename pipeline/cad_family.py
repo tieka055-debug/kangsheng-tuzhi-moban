@@ -349,7 +349,7 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
                 y = q.y0 if out.y < q.y0 else q.y1
                 if abs(inn.y - y) > 1: return ('l', out, fitz.Point(inn.x, y))
         return it
-    if tpl.get('split_early'):
+    if tpl.get('split_early', True):   # (default on: a path running past the frame may carry note glyphs too)
         # some text-to-outline exports put whole note paragraphs AND the margin watermark into ONE path that runs past
         # the frame: split such big paths into spatially separate pieces before the frame test, so the notes stay
         ge = 0.004 * I.width; D2 = []
@@ -389,17 +389,49 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
         r = d['rect']
         fp = tpl.get('frame_pad', 0.5)   # tables drawn up to the outer frame line need a little more slack
         edge_min = 0.02 * min(I.width, I.height) if tpl.get('margin_attach') else 2.0   # (letter strokes of note text that ends on the frame line)
-        if not fitz.Rect(I.x0 - fp, I.y0 - fp, I.x1 + fp, I.y1 + fp).contains(r):
-            dropped['frame_band'] += 1; continue
-        if r.width > 0.9 * I.width or r.height > 0.9 * I.height:
-            dropped['frame_rule'] += 1; continue
+        band_ = not fitz.Rect(I.x0 - fp, I.y0 - fp, I.x1 + fp, I.y1 + fp).contains(r)
+        if band_ or r.width > 0.9 * I.width or r.height > 0.9 * I.height:
+            # one path may carry table rules inside the frame together with frame lines/ticks: keep the straight
+            # axis-aligned items lying wholly inside the frame (not on its edge, not frame-long, not edge ticks)
+            Ib = fitz.Rect(I.x0 - fp, I.y0 - fp, I.x1 + fp, I.y1 + fp)
+            tick_ = 0.03 * min(I.width, I.height)
+            def _in(it):
+                if it[0] != 'l' or not (Ib.contains(it[1]) and Ib.contains(it[2])): return False
+                a_, b_ = it[1], it[2]
+                if abs(a_.y - b_.y) < 0.3:
+                    if min(abs(a_.y - I.y0), abs(a_.y - I.y1)) < 1.0 or abs(a_.x - b_.x) > 0.9 * I.width: return False
+                    on_ = min(abs(a_.x - I.x0), abs(a_.x - I.x1), abs(b_.x - I.x0), abs(b_.x - I.x1)) < 1.0
+                elif abs(a_.x - b_.x) < 0.3:
+                    if min(abs(a_.x - I.x0), abs(a_.x - I.x1)) < 1.0 or abs(a_.y - b_.y) > 0.9 * I.height: return False
+                    on_ = min(abs(a_.y - I.y0), abs(a_.y - I.y1), abs(b_.y - I.y0), abs(b_.y - I.y1)) < 1.0
+                else: return False
+                return not (on_ and abs(a_ - b_) < tick_)
+            its = [it for it in d['items'] if _in(it)] if len(d['items']) > 1 and all(it[0] == 'l' for it in d['items']) else []
+            if not its:
+                dropped['frame_band' if band_ else 'frame_rule'] += 1; continue
+            P_ = [q for it in its for q in it[1:3]]
+            d = dict(d); d['items'] = its; d['closePath'] = False
+            d['rect'] = r = fitz.Rect(min(q.x for q in P_), min(q.y for q in P_), max(q.x for q in P_), max(q.y for q in P_))
+            dropped['frame_band_split' if band_ else 'frame_rule_split'] += 1
         # a long straight rule lying on the inner-frame edge (e.g. the title-block top line) is frame, not drawing
         if all(it[0] == 'l' for it in d['items']) and (
                 (r.height < 0.6 and r.width > edge_min and min(abs(r.y0 - I.y0), abs(r.y1 - I.y1)) < 1.0) or
                 (r.width < 0.6 and r.height > edge_min and min(abs(r.x0 - I.x0), abs(r.x1 - I.x1)) < 1.0)):
             dropped['frame_rule'] += 1; continue
         if inside_any(r, furn):
-            dropped['title_or_rev'] += 1; continue
+            # a table next to the title block may share one path with the title-block rules: its straight rules
+            # lying wholly outside every removed area stay (the title-block part goes)
+            its = []
+            if len(d['items']) > 1 and all(it[0] == 'l' for it in d['items']):
+                def _out(q): return not any(fitz.Rect(f_.x0 - 0.6, f_.y0 - 0.6, f_.x1 + 0.6, f_.y1 + 0.6).contains(q) for f_ in furn)
+                its = [it for it in d['items'] if (abs(it[1].x - it[2].x) < 0.3 or abs(it[1].y - it[2].y) < 0.3)
+                       and abs(it[1] - it[2]) > 2 and _out(it[1]) and _out(it[2])]
+            if not its:
+                dropped['title_or_rev'] += 1; continue
+            P_ = [q for it in its for q in it[1:3]]
+            d = dict(d); d['items'] = its; d['closePath'] = False
+            d['rect'] = r = fitz.Rect(min(q.x for q in P_), min(q.y for q in P_), max(q.x for q in P_), max(q.y for q in P_))
+            dropped['title_rules_split'] += 1
         # a path may mix drawing strokes with supplier-frame strokes: drop the individual items that
         # lie wholly inside a supplier title/revision area (both ends of a line inside)
         if furn and len(d['items']) > 1:
@@ -480,16 +512,25 @@ def run(job, out, font, font_index=0, brand='kangsheng'):
                 src_ = next((e[2] for e in grp if e[2].get('color') is not None and e[2].get('width')), grp[0][2])
                 if src_.get('color') is None: continue
             # the table's row rules may run past the outer columns (their border was the supplier frame): follow them
-            rows = [(min(it[1].x, it[2].x), max(it[1].x, it[2].x), it[1].y) for d in keep for it in d['items']
-                    if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3 and yb_ - 60 * u_ < it[1].y < yb_ - 1
-                    and min(it[1].x, it[2].x) <= x0 + 0.6 and max(it[1].x, it[2].x) >= x1 - 0.6]   # full-width row rules only
+            rows_all = [(min(it[1].x, it[2].x), max(it[1].x, it[2].x), it[1].y) for d in keep for it in d['items']
+                        if it[0] == 'l' and abs(it[1].y - it[2].y) < 0.3 and yb_ - 60 * u_ < it[1].y < yb_ - 1]
+            rows = [r_ for r_ in rows_all if r_[0] <= x0 + 0.6 and r_[1] >= x1 - 0.6]   # full-width row rules only
+            xs_ = sorted(e[0] for e in grp)
             new_items = []
             for side in (0, 1):
-                ends = [r_[side] for r_ in rows]
-                if not ends: continue
-                far = min(ends) if side == 0 else max(ends)
-                same = [r_ for r_ in rows if abs(r_[side] - far) < 0.6]
-                if len(same) >= 2 and (far < x0 - 1 if side == 0 else far > x1 + 1):
+                def _far(rs):
+                    ends = [r_[side] for r_ in rs]
+                    if not ends: return None, []
+                    far = min(ends) if side == 0 else max(ends)
+                    return far, [r_ for r_ in rs if abs(r_[side] - far) < 0.6]
+                far, same = _far(rows)
+                if not (len(same) >= 2 and (far < x0 - 1 if side == 0 else far > x1 + 1)):
+                    # two tables standing side by side on one base: the outer table's rows only span its own cells
+                    # (only when those rows run out to the frame edge, i.e. the frame was the table's border)
+                    xe_ = I.x0 if side == 0 else I.x1
+                    far, same = _far([r_ for r_ in rows_all if abs(r_[side] - xe_) < 1.0 and ((r_[0] <= x0 + 0.6 and r_[1] >= xs_[1] - 0.6) if side == 0
+                                      else (r_[1] >= x1 - 0.6 and r_[0] <= xs_[-2] + 0.6))])
+                if far is not None and len(same) >= 2 and (far < x0 - 1 if side == 0 else far > x1 + 1):
                     new_items.append(('l', fitz.Point(far, min(r_[2] for r_ in same)), fitz.Point(far, yb_)))
                     if side == 0: x0 = far
                     else: x1 = far

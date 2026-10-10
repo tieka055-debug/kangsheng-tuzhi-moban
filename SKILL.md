@@ -226,7 +226,7 @@ python engine/kangsheng.py draft <manifest> --output <新目录> --control-root 
 **算范围要用线段端点**：0 宽发丝线的 `rect` 高度为 0，`Rect |= rect` 会把它当空矩形忽略，会低估内容范围（clip 取小了会让长线整条被排除、`FRAME_NOT_FOUND`）。
 
 **新建模板（推荐用起草工具）：** `python tools/new_template.py 原图.pdf 模板名 [--rotate 270] [--frame-bottom inner_ring] [--extra x0,y0,x1,y1 …] [--no-auto] --out 目录` 自动量标题栏/修订栏/角上小框，出两张图：`草稿-去掉的区域.png`（红色=要去掉的区域，**逐块确认里面没有零件表、说明等产品内容**；自动量的常会把标题栏上方的零件表一起框进去，这时用 `--no-auto --extra` 手写区域）和 `草稿-原图对照.png`。合格后同样参数加 `--desc … --write` 写进模板，再 `frame_match.py --learn` 登记 2–5 张看过对照图的样本。zsh 里 `--extra` 的多个区域要直接写在命令里，不要放进一个变量（zsh 不拆分）。
-**说明文字写出内框线**（协展等）：模板开 `split_early`（越框的大路径先按空间拆开）+ `frame_pad: 12` + `margin_attach`（框外的碎片只有和框内内容连着才保留，格号、刻度、水印字去掉）。
+**说明文字写出内框线**（协展等）：`split_early`（越框的大路径先按空间拆开，已默认打开）+ 模板开 `frame_pad: 12` + `margin_attach`（框外的碎片只有和框内内容连着才保留，格号、刻度、水印字去掉）。
 **白色遮挡框**：尺寸数字下垫的白色四边形（白填充、白或无描边、里面紧接着画字）程序自动不画，report 记 `white_masks_dropped`；黑底图不受影响。
 **OFF_SHEET 警告**：report 里出现就说明有原图线条被放到了图框外（多半是视图顶边被当成长线去掉、剩下的 0 宽竖线让范围算小），不要回填；模板加 `line_extent_fix: true` 通常能修。
 

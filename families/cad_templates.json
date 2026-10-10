@@ -1428,6 +1428,43 @@
     ]
    ],
    "fit_search": true
+  },
+  "LWD_jack": {
+   "desc": "丽伟达(耳机插座)国标框 rotate 270：格号外框，右下大标题栏（主要技术性能表左侧保留），右上修订栏；零件表在左下贴框边",
+   "furniture_frac": [
+    [
+     0.51,
+     0.838,
+     1.0,
+     1.0
+    ],
+    [
+     0.745,
+     0.0,
+     1.0,
+     0.042
+    ]
+   ],
+   "fit_search": true,
+   "frame_bottom": "inner_ring"
+  },
+  "PX_pengxiang": {
+   "desc": "鹏祥框：格号外框，右下公差+公司名+ITEM/PART NO 标题栏，右上 REV 修订栏；说明与标题栏字形同一复合路径（靠默认 split_early 拆开）",
+   "furniture_frac": [
+    [
+     0.601,
+     0.788,
+     1,
+     1
+    ],
+    [
+     0.682,
+     0,
+     1,
+     0.042
+    ]
+   ],
+   "fit_search": true
   }
  }
 }
